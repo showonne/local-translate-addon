@@ -1,7 +1,10 @@
 import Foundation
 import Translation
 
-/// Exported C symbol — called from Rust via FFI.
+/// Exported C symbol — called from Rust via FFI (on a libuv thread pool thread).
+/// Dispatches async Translation.framework work to the main dispatch queue so the
+/// main thread's RunLoop (pumped by Electron's Cocoa event loop) can deliver
+/// XPC response continuations. Blocks the calling thread via semaphore.
 /// Returns a heap-allocated C string. Caller must free with free_translate_result().
 /// On error, returns a string starting with "__error__:".
 @_cdecl("translate_text_ffi")
@@ -15,13 +18,15 @@ public func translateTextFfi(
     var result: String = "__error__:unknown"
     let sema = DispatchSemaphore(value: 0)
 
-    Task {
-        do {
-            result = try await performTranslation(text: text, targetLang: targetLang)
-        } catch {
-            result = "__error__:\(error.localizedDescription)"
+    DispatchQueue.main.async {
+        Task {
+            do {
+                result = try await performTranslation(text: text, targetLang: targetLang)
+            } catch {
+                result = "__error__:\(error.localizedDescription)"
+            }
+            sema.signal()
         }
-        sema.signal()
     }
 
     sema.wait()
@@ -36,17 +41,11 @@ public func freeTranslateResult(_ ptr: UnsafeMutablePointer<CChar>?) {
 private func performTranslation(text: String, targetLang: String) async throws -> String {
     if #available(macOS 26, *) {
         return try await performTranslationModern(text: text, targetLang: targetLang)
-    } else if #available(macOS 15, *) {
-        throw NSError(
-            domain: "MacosTranslate",
-            code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Translation.framework session API requires macOS 26+"]
-        )
     } else {
         throw NSError(
             domain: "MacosTranslate",
             code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "Translation.framework requires macOS 15+"]
+            userInfo: [NSLocalizedDescriptionKey: "Translation.framework session API requires macOS 26+"]
         )
     }
 }
