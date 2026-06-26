@@ -1,25 +1,43 @@
 {
-  "name": "@difft/macos-translate",
+  "name": "local-translate-addon",
   "version": "0.1.0",
   "description": "macOS Translation.framework via napi-rs",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "index.js",
-    "index.d.ts",
-    "macos-translate.darwin-arm64.node",
-    "macos-translate.darwin-x64.node"
+    "index.d.ts"
   ],
   "scripts": {
-    "build": "cargo build --release --target aarch64-apple-darwin && cp target/aarch64-apple-darwin/release/libmacos_translate.dylib macos-translate.darwin-arm64.node",
-    "build:x64": "cargo build --release --target x86_64-apple-darwin && cp target/x86_64-apple-darwin/release/libmacos_translate.dylib macos-translate.darwin-x64.node",
-    "build:all": "npm run build && npm run build:x64",
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm",
+    "universal": "napi universal",
+    "version": "napi version",
     "test": "node --test __test__/test.mjs"
   },
-  "devDependencies": {
-    "@napi-rs/cli": "^3"
+  "napi": {
+    "name": "local-translate-addon",
+    "triples": {
+      "defaults": false,
+      "additional": [
+        "aarch64-apple-darwin",
+        "x86_64-apple-darwin",
+        "universal-apple-darwin"
+      ]
+    }
   },
+  "license": "MIT",
   "engines": {
     "node": ">= 18"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.4"
+  },
+  "optionalDependencies": {
+    "local-translate-addon-darwin-arm64": "0.1.0",
+    "local-translate-addon-darwin-x64": "0.1.0",
+    "local-translate-addon-darwin-universal": "0.1.0"
   }
 }
