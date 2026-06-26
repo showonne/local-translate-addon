@@ -11,7 +11,9 @@
     "macos-translate.darwin-x64.node"
   ],
   "scripts": {
-    "build": "cargo build --release --target aarch64-apple-darwin",
+    "build": "cargo build --release --target aarch64-apple-darwin && cp target/aarch64-apple-darwin/release/libmacos_translate.dylib macos-translate.darwin-arm64.node",
+    "build:x64": "cargo build --release --target x86_64-apple-darwin && cp target/x86_64-apple-darwin/release/libmacos_translate.dylib macos-translate.darwin-x64.node",
+    "build:all": "npm run build && npm run build:x64",
     "test": "node --test __test__/test.mjs"
   },
   "devDependencies": {
