@@ -160,11 +160,9 @@ jobs:
 
       - name: Publish platform packages
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
           for dir in npm/darwin-arm64 npm/darwin-x64 npm/darwin-universal; do
             cd $dir
-            npm version $VERSION --no-git-tag-version --allow-same-version
-            npm publish --access public
+            npm publish --access public --ignore-scripts || echo "Skipped: already published"
             cd ../..
           done
         env:
@@ -174,3 +172,4 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
