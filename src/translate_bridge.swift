@@ -1,11 +1,43 @@
 import Foundation
 import Translation
 
+private class TranslationRunner {
+    static let shared = TranslationRunner()
+
+    private var cfRunLoop: CFRunLoop?
+    private let readySema = DispatchSemaphore(value: 0)
+
+    func start() {
+        let thread = Thread { [weak self] in
+            guard let self = self else { return }
+            self.cfRunLoop = CFRunLoopGetCurrent()
+            var ctx = CFRunLoopSourceContext()
+            let source = CFRunLoopSourceCreate(nil, 0, &ctx)!
+            CFRunLoopAddSource(self.cfRunLoop!, source, .defaultMode)
+            self.readySema.signal()
+            CFRunLoopRun()
+        }
+        thread.name = "com.difft.translate.runner"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+        readySema.wait()
+    }
+
+    func perform(_ block: @escaping () -> Void) {
+        guard let rl = cfRunLoop else { return }
+        CFRunLoopPerformBlock(rl, CFRunLoopMode.defaultMode.rawValue, block)
+        CFRunLoopWakeUp(rl)
+    }
+}
+
+@_cdecl("initialize_ffi")
+public func initializeFfi() {
+    TranslationRunner.shared.start()
+}
+
 /// Exported C symbol — called from Rust via FFI (on a libuv thread pool thread).
-/// Dispatches async Translation.framework work to the main dispatch queue so the
-/// main thread's RunLoop (pumped by Electron's Cocoa event loop) can deliver
-/// XPC response continuations. Blocks the calling thread via semaphore.
-/// Returns a heap-allocated C string. Caller must free with free_translate_result().
+/// Requires initializeFfi() to have been called first.
+/// Returns a heap-allocated C string; caller must free with free_translate_result().
 /// On error, returns a string starting with "__error__:".
 @_cdecl("translate_text_ffi")
 public func translateTextFfi(
@@ -18,7 +50,7 @@ public func translateTextFfi(
     var result: String = "__error__:unknown"
     let sema = DispatchSemaphore(value: 0)
 
-    DispatchQueue.main.async {
+    TranslationRunner.shared.perform {
         Task {
             do {
                 result = try await performTranslation(text: text, targetLang: targetLang)
