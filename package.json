@@ -1,6 +1,6 @@
 {
   "name": "local-translate-addon",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "macOS Translation.framework via napi-rs",
   "main": "index.js",
   "types": "index.d.ts",
@@ -36,8 +36,8 @@
     "@napi-rs/cli": "^2.18.4"
   },
   "optionalDependencies": {
-    "local-translate-addon-darwin-arm64": "0.1.0",
-    "local-translate-addon-darwin-x64": "0.1.0",
-    "local-translate-addon-darwin-universal": "0.1.0"
+    "local-translate-addon-darwin-arm64": "1.0.1",
+    "local-translate-addon-darwin-x64": "1.0.1",
+    "local-translate-addon-darwin-universal": "1.0.1"
   }
 }

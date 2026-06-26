@@ -36,6 +36,13 @@ fn main() {
     println!("cargo:rustc-link-search=/usr/lib/swift");
     println!("cargo:rustc-link-lib=swiftFoundation");
     println!("cargo:rustc-link-lib=swiftCore");
+
+    // libswift_Concurrency.dylib is in the DYLD shared cache at /usr/lib/swift on macOS 12+.
+    // Adding just this rpath is sufficient; do NOT also add the Xcode toolchain path or the
+    // dylib loads twice (duplicate class warning + crashes).
+    println!("cargo:rustc-link-arg=-rpath");
+    println!("cargo:rustc-link-arg=/usr/lib/swift");
+
     println!("cargo:rerun-if-changed=src/translate_bridge.swift");
     println!("cargo:rerun-if-changed=build.rs");
 }
