@@ -1,6 +1,6 @@
 {
   "name": "local-translate-addon",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "macOS Translation.framework via napi-rs",
   "main": "index.js",
   "types": "index.d.ts",
