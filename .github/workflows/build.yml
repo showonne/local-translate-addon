@@ -146,11 +146,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Sync version from tag
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          npm version $VERSION --no-git-tag-version --allow-same-version
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
