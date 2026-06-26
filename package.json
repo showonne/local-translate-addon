@@ -1,0 +1,23 @@
+{
+  "name": "@difft/macos-translate",
+  "version": "0.1.0",
+  "description": "macOS Translation.framework via napi-rs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "macos-translate.darwin-arm64.node",
+    "macos-translate.darwin-x64.node"
+  ],
+  "scripts": {
+    "build": "cargo build --release --target aarch64-apple-darwin",
+    "test": "node --test __test__/test.mjs"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3"
+  },
+  "engines": {
+    "node": ">= 18"
+  }
+}
