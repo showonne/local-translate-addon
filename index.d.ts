@@ -1,4 +1,3 @@
-export declare function initialize(): void;
 /**
  * Translate text using macOS Translation.framework.
  * Requires macOS 15+ with the target language pack installed.

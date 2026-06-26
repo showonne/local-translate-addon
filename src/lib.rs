@@ -6,7 +6,6 @@ use std::ffi::{CStr, CString};
 
 #[allow(improper_ctypes)]
 extern "C" {
-    fn initialize_ffi();
     fn translate_text_ffi(text: *const i8, target_lang: *const i8) -> *mut i8;
     fn free_translate_result(ptr: *mut i8);
 }
@@ -45,11 +44,6 @@ impl Task for TranslateTask {
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
         Ok(output)
     }
-}
-
-#[napi]
-pub fn initialize() {
-    unsafe { initialize_ffi() }
 }
 
 #[napi]
