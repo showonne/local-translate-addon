@@ -148,17 +148,7 @@ jobs:
         run: ls -R ./npm
         shell: bash
 
-      - name: Publish platform packages
-        run: |
-          for dir in npm/darwin-arm64 npm/darwin-x64 npm/darwin-universal; do
-            cd $dir
-            npm publish --access public --ignore-scripts || echo "Skipped: already published"
-            cd ../..
-          done
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Publish main package
+      - name: Publish
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
