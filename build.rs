@@ -1,25 +1,21 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-fn main() {
-    napi_build::setup();
-
-    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
-    let obj_path = out_dir.join("translate_bridge.o");
-
-    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
-    let target = if arch == "aarch64" {
-        "arm64-apple-macos15.0"
-    } else {
-        "x86_64-apple-macos15.0"
-    };
+fn compile_swift(src: &str, out_dir: &PathBuf, target: &str) -> PathBuf {
+    let stem = std::path::Path::new(src)
+        .file_stem()
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let obj_path = out_dir.join(format!("{stem}.o"));
 
     let status = Command::new("swiftc")
         .args([
-            "src/translate_bridge.swift",
+            src,
             "-emit-object",
+            "-parse-as-library",
             "-module-name",
-            "TranslateBridge",
+            "Bridge",
             "-target",
             target,
             "-o",
@@ -28,21 +24,39 @@ fn main() {
         .status()
         .expect("swiftc not found — install Xcode command line tools");
 
-    assert!(status.success(), "swiftc failed");
+    assert!(status.success(), "swiftc failed for {src}");
+    obj_path
+}
 
-    println!("cargo:rustc-link-arg={}", obj_path.display());
+fn main() {
+    napi_build::setup();
+
+    let out_dir = PathBuf::from(std::env::var("OUT_DIR").unwrap());
+
+    let arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+    let target = if arch == "aarch64" {
+        "arm64-apple-macos15.0"
+    } else {
+        "x86_64-apple-macos15.0"
+    };
+
+    let translate_obj = compile_swift("src/translate_bridge.swift", &out_dir, target);
+    let speech_obj = compile_swift("src/speech_bridge.swift", &out_dir, target);
+
+    println!("cargo:rustc-link-arg={}", translate_obj.display());
+    println!("cargo:rustc-link-arg={}", speech_obj.display());
     println!("cargo:rustc-link-lib=framework=Foundation");
     println!("cargo:rustc-link-lib=framework=Translation");
+    println!("cargo:rustc-link-lib=framework=Speech");
     println!("cargo:rustc-link-search=/usr/lib/swift");
     println!("cargo:rustc-link-lib=swiftFoundation");
     println!("cargo:rustc-link-lib=swiftCore");
 
     // libswift_Concurrency.dylib is in the DYLD shared cache at /usr/lib/swift on macOS 12+.
-    // Adding just this rpath is sufficient; do NOT also add the Xcode toolchain path or the
-    // dylib loads twice (duplicate class warning + crashes).
     println!("cargo:rustc-link-arg=-rpath");
     println!("cargo:rustc-link-arg=/usr/lib/swift");
 
     println!("cargo:rerun-if-changed=src/translate_bridge.swift");
+    println!("cargo:rerun-if-changed=src/speech_bridge.swift");
     println!("cargo:rerun-if-changed=build.rs");
 }
