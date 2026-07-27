@@ -16,3 +16,12 @@ export declare function requestSpeechPermission(): Promise<unknown>
  * lang:     BCP-47 locale, e.g. "en-US", "zh-CN"
  */
 export declare function recognizeSpeech(filePath: string, lang: string): Promise<unknown>
+/** Recognize speech from an audio file, optionally requiring the system's local model. */
+export declare function recognizeSpeechWithOptions(filePath: string, lang: string, onDeviceOnly: boolean): Promise<unknown>
+export interface SpeechRecognitionCapabilities {
+  isAvailable: boolean
+  supportsOnDeviceRecognition: boolean
+  isAuthorized: boolean
+}
+/** Check whether the selected locale currently supports system speech recognition. */
+export declare function getSpeechRecognitionCapabilities(lang: string): SpeechRecognitionCapabilities

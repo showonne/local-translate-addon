@@ -12,6 +12,12 @@ extern "C" {
     fn free_translate_result(ptr: *mut i8);
 
     fn recognize_speech_ffi(file_path: *const i8, lang: *const i8) -> *mut i8;
+    fn recognize_speech_with_options_ffi(
+        file_path: *const i8,
+        lang: *const i8,
+        on_device_only: bool,
+    ) -> *mut i8;
+    fn speech_recognition_capabilities_ffi(lang: *const i8) -> u32;
     fn request_speech_permission_ffi() -> *mut i8;
     fn free_speech_result(ptr: *mut i8);
 }
@@ -132,4 +138,77 @@ impl Task for RecognizeSpeechTask {
 #[napi]
 pub fn recognize_speech(file_path: String, lang: String) -> AsyncTask<RecognizeSpeechTask> {
     AsyncTask::new(RecognizeSpeechTask { file_path, lang })
+}
+
+pub struct RecognizeSpeechWithOptionsTask {
+    file_path: String,
+    lang: String,
+    on_device_only: bool,
+}
+
+impl Task for RecognizeSpeechWithOptionsTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let c_path = cstring(&self.file_path)?;
+        let c_lang = cstring(&self.lang)?;
+        let ptr = unsafe {
+            recognize_speech_with_options_ffi(
+                c_path.as_ptr(),
+                c_lang.as_ptr(),
+                self.on_device_only,
+            )
+        };
+        if ptr.is_null() {
+            return Err(Error::from_reason("recognize_speech_with_options_ffi returned null"));
+        }
+        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
+        unsafe { free_speech_result(ptr) };
+
+        if let Some(msg) = result.strip_prefix("__error__:") {
+            Err(Error::from_reason(msg.to_string()))
+        } else {
+            Ok(result)
+        }
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Recognize speech from an audio file, optionally requiring the system's local model.
+#[napi]
+pub fn recognize_speech_with_options(
+    file_path: String,
+    lang: String,
+    on_device_only: bool,
+) -> AsyncTask<RecognizeSpeechWithOptionsTask> {
+    AsyncTask::new(RecognizeSpeechWithOptionsTask {
+        file_path,
+        lang,
+        on_device_only,
+    })
+}
+
+#[napi(object)]
+pub struct SpeechRecognitionCapabilities {
+    pub is_available: bool,
+    pub supports_on_device_recognition: bool,
+    pub is_authorized: bool,
+}
+
+/// Check whether the selected locale currently supports system speech recognition.
+#[napi]
+pub fn get_speech_recognition_capabilities(
+    lang: String,
+) -> Result<SpeechRecognitionCapabilities> {
+    let c_lang = cstring(&lang)?;
+    let capabilities = unsafe { speech_recognition_capabilities_ffi(c_lang.as_ptr()) };
+    Ok(SpeechRecognitionCapabilities {
+        is_available: capabilities & 1 != 0,
+        supports_on_device_recognition: capabilities & (1 << 1) != 0,
+        is_authorized: capabilities & (1 << 2) != 0,
+    })
 }

@@ -35,6 +35,43 @@ public func recognizeSpeechFfi(
     filePathPtr: UnsafePointer<CChar>,
     langPtr: UnsafePointer<CChar>
 ) -> UnsafeMutablePointer<CChar>? {
+    recognizeSpeechWithOptionsFfi(
+        filePathPtr: filePathPtr,
+        langPtr: langPtr,
+        onDeviceOnly: false
+    )
+}
+
+/// Returns bit flags for the requested locale:
+/// bit 0 = recognizer available, bit 1 = on-device recognition supported,
+/// bit 2 = speech permission granted.
+@_cdecl("speech_recognition_capabilities_ffi")
+public func speechRecognitionCapabilitiesFfi(_ langPtr: UnsafePointer<CChar>) -> UInt32 {
+    let locale = Locale(identifier: String(cString: langPtr))
+    guard let recognizer = SFSpeechRecognizer(locale: locale) else {
+        return 0
+    }
+
+    var capabilities: UInt32 = 0
+    if recognizer.isAvailable {
+        capabilities |= 1
+    }
+    if recognizer.supportsOnDeviceRecognition {
+        capabilities |= 1 << 1
+    }
+    if SFSpeechRecognizer.authorizationStatus() == .authorized {
+        capabilities |= 1 << 2
+    }
+    return capabilities
+}
+
+/// Recognize speech, optionally rejecting any recognition that cannot run locally.
+@_cdecl("recognize_speech_with_options_ffi")
+public func recognizeSpeechWithOptionsFfi(
+    filePathPtr: UnsafePointer<CChar>,
+    langPtr: UnsafePointer<CChar>,
+    onDeviceOnly: Bool
+) -> UnsafeMutablePointer<CChar>? {
     let filePath = String(cString: filePathPtr)
     let lang = String(cString: langPtr)
 
@@ -61,11 +98,15 @@ public func recognizeSpeechFfi(
     guard recognizer.isAvailable else {
         return strdup("__error__:Speech recognizer is not available for locale: \(lang)")
     }
+    if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
+        return strdup("__error__:On-device speech recognition is not available for locale: \(lang)")
+    }
 
     let url = URL(fileURLWithPath: filePath)
     let request = SFSpeechURLRecognitionRequest(url: url)
     request.shouldReportPartialResults = false
     request.addsPunctuation = true
+    request.requiresOnDeviceRecognition = onDeviceOnly
 
     recognizer.recognitionTask(with: request) { speechResult, error in
         if let error = error {
