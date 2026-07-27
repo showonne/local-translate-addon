@@ -11,7 +11,6 @@ extern "C" {
     fn translate_text_ffi(text: *const i8, target_lang: *const i8) -> *mut i8;
     fn free_translate_result(ptr: *mut i8);
 
-    fn recognize_speech_ffi(file_path: *const i8, lang: *const i8) -> *mut i8;
     fn recognize_speech_with_options_ffi(
         file_path: *const i8,
         lang: *const i8,
@@ -102,6 +101,7 @@ pub fn request_speech_permission() -> AsyncTask<RequestSpeechPermissionTask> {
 pub struct RecognizeSpeechTask {
     file_path: String,
     lang: String,
+    on_device_only: bool,
 }
 
 impl Task for RecognizeSpeechTask {
@@ -112,7 +112,13 @@ impl Task for RecognizeSpeechTask {
         let c_path = cstring(&self.file_path)?;
         let c_lang = cstring(&self.lang)?;
 
-        let ptr = unsafe { recognize_speech_ffi(c_path.as_ptr(), c_lang.as_ptr()) };
+        let ptr = unsafe {
+            recognize_speech_with_options_ffi(
+                c_path.as_ptr(),
+                c_lang.as_ptr(),
+                self.on_device_only,
+            )
+        };
         if ptr.is_null() {
             return Err(Error::from_reason("recognize_speech_ffi returned null"));
         }
@@ -131,64 +137,22 @@ impl Task for RecognizeSpeechTask {
     }
 }
 
-/// Recognize speech from an audio file using macOS Speech framework.
-/// Requires prior authorization via requestSpeechPermission().
-/// filePath: absolute path to audio file (WAV, M4A, FLAC, MP3, etc.)
-/// lang:     BCP-47 locale, e.g. "en-US", "zh-CN"
-#[napi]
-pub fn recognize_speech(file_path: String, lang: String) -> AsyncTask<RecognizeSpeechTask> {
-    AsyncTask::new(RecognizeSpeechTask { file_path, lang })
-}
-
-pub struct RecognizeSpeechWithOptionsTask {
-    file_path: String,
-    lang: String,
-    on_device_only: bool,
-}
-
-impl Task for RecognizeSpeechWithOptionsTask {
-    type Output = String;
-    type JsValue = String;
-
-    fn compute(&mut self) -> Result<Self::Output> {
-        let c_path = cstring(&self.file_path)?;
-        let c_lang = cstring(&self.lang)?;
-        let ptr = unsafe {
-            recognize_speech_with_options_ffi(
-                c_path.as_ptr(),
-                c_lang.as_ptr(),
-                self.on_device_only,
-            )
-        };
-        if ptr.is_null() {
-            return Err(Error::from_reason("recognize_speech_with_options_ffi returned null"));
-        }
-        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
-        unsafe { free_speech_result(ptr) };
-
-        if let Some(msg) = result.strip_prefix("__error__:") {
-            Err(Error::from_reason(msg.to_string()))
-        } else {
-            Ok(result)
-        }
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
-    }
+#[napi(object)]
+pub struct SpeechRecognitionOptions {
+    pub on_device_only: Option<bool>,
 }
 
 /// Recognize speech from an audio file, optionally requiring the system's local model.
 #[napi]
-pub fn recognize_speech_with_options(
+pub fn recognize_speech(
     file_path: String,
     lang: String,
-    on_device_only: bool,
-) -> AsyncTask<RecognizeSpeechWithOptionsTask> {
-    AsyncTask::new(RecognizeSpeechWithOptionsTask {
+    options: Option<SpeechRecognitionOptions>,
+) -> AsyncTask<RecognizeSpeechTask> {
+    AsyncTask::new(RecognizeSpeechTask {
         file_path,
         lang,
-        on_device_only,
+        on_device_only: options.and_then(|options| options.on_device_only).unwrap_or(false),
     })
 }
 

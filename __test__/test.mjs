@@ -31,5 +31,6 @@ test('translateText is exported as a function', () => {
 test('speech recognition exports offline controls', () => {
   const addon = require(addonPath);
   assert.equal(typeof addon.getSpeechRecognitionCapabilities, 'function');
-  assert.equal(typeof addon.recognizeSpeechWithOptions, 'function');
+  assert.equal(typeof addon.recognizeSpeech, 'function');
+  assert.equal(typeof addon.recognizeSpeechWithOptions, 'undefined');
 });

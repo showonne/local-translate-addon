@@ -9,15 +9,11 @@ export declare function translateText(text: string, targetLang: string): Promise
  * Returns "authorized" | "denied" | "restricted" | "notDetermined".
  */
 export declare function requestSpeechPermission(): Promise<unknown>
-/**
- * Recognize speech from an audio file using macOS Speech framework.
- * Requires prior authorization via requestSpeechPermission().
- * filePath: absolute path to audio file (WAV, M4A, FLAC, MP3, etc.)
- * lang:     BCP-47 locale, e.g. "en-US", "zh-CN"
- */
-export declare function recognizeSpeech(filePath: string, lang: string): Promise<unknown>
+export interface SpeechRecognitionOptions {
+  onDeviceOnly?: boolean
+}
 /** Recognize speech from an audio file, optionally requiring the system's local model. */
-export declare function recognizeSpeechWithOptions(filePath: string, lang: string, onDeviceOnly: boolean): Promise<unknown>
+export declare function recognizeSpeech(filePath: string, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<unknown>
 export interface SpeechRecognitionCapabilities {
   isAvailable: boolean
   supportsOnDeviceRecognition: boolean
