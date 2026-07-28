@@ -16,6 +16,8 @@ export const enum TranslateErrorCode {
  * `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
  */
 export declare function translateText(text: string, targetLang: string): Promise<unknown>
+/** Check whether the current macOS version supports headless local translation. */
+export declare function isLocalTranslateAvailable(): boolean
 /**
  * Request authorization to use speech recognition.
  * Returns "authorized" | "denied" | "restricted" | "notDetermined".

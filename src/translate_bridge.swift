@@ -7,6 +7,14 @@ private enum TranslateErrorCode: String {
     case failed = "ERR_TRANSLATE_FAILED"
 }
 
+@_cdecl("is_local_translate_available_ffi")
+public func isLocalTranslateAvailableFfi() -> Bool {
+    if #available(macOS 26, *) {
+        return true
+    }
+    return false
+}
+
 /// Exported C symbol — called from Rust via FFI (on a libuv thread pool thread).
 /// Dispatches async Translation.framework work to the main dispatch queue so the
 /// main thread's RunLoop (pumped by Electron's Cocoa event loop in the main process)

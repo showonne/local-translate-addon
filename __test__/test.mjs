@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { execFileSync } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
@@ -42,4 +43,16 @@ test('speech recognition exports offline controls', () => {
   assert.equal(typeof addon.getSpeechRecognitionCapabilities, 'function');
   assert.equal(typeof addon.recognizeSpeech, 'function');
   assert.equal(typeof addon.recognizeSpeechWithOptions, 'undefined');
+});
+
+test('isLocalTranslateAvailable matches the macOS 26 boundary', () => {
+  const addon = require(addonPath);
+  const majorVersion = Number(
+    execFileSync('/usr/bin/sw_vers', ['-productVersion'], { encoding: 'utf8' })
+      .trim()
+      .split('.')[0]
+  );
+
+  assert.equal(typeof addon.isLocalTranslateAvailable, 'function');
+  assert.equal(addon.isLocalTranslateAvailable(), majorVersion >= 26);
 });

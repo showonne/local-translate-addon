@@ -10,6 +10,7 @@ use std::ffi::{CStr, CString};
 extern "C" {
     fn translate_text_ffi(text: *const i8, target_lang: *const i8) -> *mut i8;
     fn free_translate_result(ptr: *mut i8);
+    fn is_local_translate_available_ffi() -> bool;
 
     fn recognize_speech_with_options_ffi(
         file_path: *const i8,
@@ -133,6 +134,12 @@ pub fn translate_text(text: String, target_lang: String) -> AsyncTask<TranslateT
         target_lang,
         failure_code: None,
     })
+}
+
+/// Check whether the current macOS version supports headless local translation.
+#[napi]
+pub fn is_local_translate_available() -> bool {
+    unsafe { is_local_translate_available_ffi() }
 }
 
 // ── requestSpeechPermission ───────────────────────────────────────────────────
@@ -284,5 +291,11 @@ mod tests {
 
         assert_eq!(failure.code, "ERR_TRANSLATE_FAILED");
         assert_eq!(failure.message, "unexpected framework failure");
+    }
+
+    #[test]
+    fn exposes_swift_local_translate_availability() {
+        let ffi_result = unsafe { is_local_translate_available_ffi() };
+        assert_eq!(is_local_translate_available(), ffi_result);
     }
 }
