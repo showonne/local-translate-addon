@@ -29,9 +29,57 @@ fn cstring(s: &str) -> Result<CString> {
 
 // ── translateText ─────────────────────────────────────────────────────────────
 
+const TRANSLATE_ERROR_PREFIX: &str = "__error__:";
+const ERR_TRANSLATE_UNSUPPORTED_OS_VERSION: &str = "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION";
+const ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED: &str = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED";
+const ERR_TRANSLATE_FAILED: &str = "ERR_TRANSLATE_FAILED";
+
+#[allow(non_camel_case_types)]
+#[napi(string_enum)]
+pub enum TranslateErrorCode {
+    #[napi(value = "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION")]
+    UNSUPPORT_OS_VERSION,
+    #[napi(value = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED")]
+    LANGUAGE_PAIR_NOT_INSTALLED,
+    #[napi(value = "ERR_TRANSLATE_FAILED")]
+    FAILED,
+}
+
+#[derive(Debug)]
+struct TranslateFailure {
+    code: String,
+    message: String,
+}
+
+fn decode_translate_result(result: String) -> std::result::Result<String, TranslateFailure> {
+    let Some(payload) = result.strip_prefix(TRANSLATE_ERROR_PREFIX) else {
+        return Ok(result);
+    };
+
+    let Some((code, message)) = payload.split_once(':') else {
+        return Err(TranslateFailure {
+            code: ERR_TRANSLATE_FAILED.to_string(),
+            message: payload.to_string(),
+        });
+    };
+
+    let code = match code {
+        ERR_TRANSLATE_UNSUPPORTED_OS_VERSION => ERR_TRANSLATE_UNSUPPORTED_OS_VERSION,
+        ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED => ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED,
+        ERR_TRANSLATE_FAILED => ERR_TRANSLATE_FAILED,
+        _ => ERR_TRANSLATE_FAILED,
+    };
+
+    Err(TranslateFailure {
+        code: code.to_string(),
+        message: message.to_string(),
+    })
+}
+
 pub struct TranslateTask {
     text: String,
     target_lang: String,
+    failure_code: Option<String>,
 }
 
 impl Task for TranslateTask {
@@ -49,21 +97,42 @@ impl Task for TranslateTask {
         let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
         unsafe { free_translate_result(ptr) };
 
-        if let Some(msg) = result.strip_prefix("__error__:") {
-            Err(Error::from_reason(msg.to_string()))
-        } else {
-            Ok(result)
+        match decode_translate_result(result) {
+            Ok(translated_text) => Ok(translated_text),
+            Err(failure) => {
+                self.failure_code = Some(failure.code);
+                Err(Error::from_reason(failure.message))
+            }
         }
     }
 
     fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
         Ok(output)
     }
+
+    fn reject(&mut self, env: Env, err: Error) -> Result<Self::JsValue> {
+        let code = self
+            .failure_code
+            .take()
+            .unwrap_or_else(|| ERR_TRANSLATE_FAILED.to_string());
+        let coded_error: napi::Error<String> = napi::Error::new(code, err.reason);
+        let js_error = napi::JsError::from(coded_error).into_unknown(env);
+        Err(Error::from(js_error))
+    }
 }
 
+/// Translate text with the system's installed language models.
+///
+/// Rejects with an Error whose code is one of:
+/// `ERR_TRANSLATE_UNSUPPORTED_OS_VERSION`,
+/// `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
 #[napi]
 pub fn translate_text(text: String, target_lang: String) -> AsyncTask<TranslateTask> {
-    AsyncTask::new(TranslateTask { text, target_lang })
+    AsyncTask::new(TranslateTask {
+        text,
+        target_lang,
+        failure_code: None,
+    })
 }
 
 // ── requestSpeechPermission ───────────────────────────────────────────────────
@@ -175,4 +244,45 @@ pub fn get_speech_recognition_capabilities(
         supports_on_device_recognition: capabilities & (1 << 1) != 0,
         is_authorized: capabilities & (1 << 2) != 0,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_unsupported_os_translation_error() {
+        let failure = decode_translate_result(
+            "__error__:ERR_TRANSLATE_UNSUPPORTED_OS_VERSION:Translation.framework requires macOS 26+"
+                .to_string(),
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION");
+        assert_eq!(failure.message, "Translation.framework requires macOS 26+");
+    }
+
+    #[test]
+    fn decodes_missing_language_pair_translation_error() {
+        let failure = decode_translate_result(
+            "__error__:ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED:No installed language pair found for target: zh-Hans"
+                .to_string(),
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED");
+        assert_eq!(
+            failure.message,
+            "No installed language pair found for target: zh-Hans"
+        );
+    }
+
+    #[test]
+    fn malformed_translation_error_falls_back_to_generic_code() {
+        let failure = decode_translate_result("__error__:unexpected framework failure".to_string())
+            .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSLATE_FAILED");
+        assert_eq!(failure.message, "unexpected framework failure");
+    }
 }

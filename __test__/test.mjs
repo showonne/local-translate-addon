@@ -28,6 +28,15 @@ test('translateText is exported as a function', () => {
   assert.equal(typeof addon.translateText, 'function', 'translateText should be a function');
 });
 
+test('TranslateErrorCode exports stable error codes', () => {
+  const addon = require(addonPath);
+  assert.deepEqual(addon.TranslateErrorCode, {
+    UNSUPPORT_OS_VERSION: 'ERR_TRANSLATE_UNSUPPORTED_OS_VERSION',
+    LANGUAGE_PAIR_NOT_INSTALLED: 'ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED',
+    FAILED: 'ERR_TRANSLATE_FAILED',
+  });
+});
+
 test('speech recognition exports offline controls', () => {
   const addon = require(addonPath);
   assert.equal(typeof addon.getSpeechRecognitionCapabilities, 'function');

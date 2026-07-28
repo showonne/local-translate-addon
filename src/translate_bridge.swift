@@ -1,12 +1,18 @@
 import Foundation
 import Translation
 
+private enum TranslateErrorCode: String {
+    case unsupportedOSVersion = "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION"
+    case languagePairNotInstalled = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED"
+    case failed = "ERR_TRANSLATE_FAILED"
+}
+
 /// Exported C symbol — called from Rust via FFI (on a libuv thread pool thread).
 /// Dispatches async Translation.framework work to the main dispatch queue so the
 /// main thread's RunLoop (pumped by Electron's Cocoa event loop in the main process)
 /// can deliver XPC response continuations. Blocks the calling thread via semaphore.
 /// Returns a heap-allocated C string. Caller must free with free_translate_result().
-/// On error, returns a string starting with "__error__:".
+/// On error, returns "__error__:<code>:<message>".
 @_cdecl("translate_text_ffi")
 public func translateTextFfi(
     textPtr: UnsafePointer<CChar>,
@@ -15,7 +21,7 @@ public func translateTextFfi(
     let text = String(cString: textPtr)
     let targetLang = String(cString: targetLangPtr)
 
-    var result: String = "__error__:unknown"
+    var result: String = "__error__:\(TranslateErrorCode.failed.rawValue):unknown"
     let sema = DispatchSemaphore(value: 0)
 
     DispatchQueue.main.async {
@@ -23,7 +29,8 @@ public func translateTextFfi(
             do {
                 result = try await performTranslation(text: text, targetLang: targetLang)
             } catch {
-                result = "__error__:\(error.localizedDescription)"
+                let code = translateErrorCode(for: error)
+                result = "__error__:\(code.rawValue):\(error.localizedDescription)"
             }
             sema.signal()
         }
@@ -31,6 +38,22 @@ public func translateTextFfi(
 
     sema.wait()
     return strdup(result)
+}
+
+private func translateErrorCode(for error: Error) -> TranslateErrorCode {
+    let nsError = error as NSError
+    guard nsError.domain == "MacosTranslate" else {
+        return .failed
+    }
+
+    switch nsError.code {
+    case -1:
+        return .unsupportedOSVersion
+    case -2:
+        return .languagePairNotInstalled
+    default:
+        return .failed
+    }
 }
 
 @_cdecl("free_translate_result")
