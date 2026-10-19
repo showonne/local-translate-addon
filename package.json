@@ -1,6 +1,6 @@
 {
   "name": "local-translate-addon",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "description": "macOS Translation.framework via napi-rs",
   "main": "index.js",
   "types": "index.d.ts",
@@ -15,15 +15,14 @@
     "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal",
     "version": "napi version",
-    "test": "node --test __test__/test.mjs"
+    "test": "node --test __test__/test.mjs",
+    "build:universal": "napi build --platform --release --target aarch64-apple-darwin && napi build --platform --release --target x86_64-apple-darwin && napi universal -d ."
   },
   "napi": {
     "name": "local-translate-addon",
     "triples": {
       "defaults": false,
       "additional": [
-        "aarch64-apple-darwin",
-        "x86_64-apple-darwin",
         "universal-apple-darwin"
       ]
     }
@@ -36,8 +35,6 @@
     "@napi-rs/cli": "^2.18.4"
   },
   "optionalDependencies": {
-    "local-translate-addon-darwin-arm64": "1.0.1",
-    "local-translate-addon-darwin-x64": "1.0.1",
-    "local-translate-addon-darwin-universal": "1.0.1"
+    "local-translate-addon-darwin-universal": "1.0.4"
   }
 }

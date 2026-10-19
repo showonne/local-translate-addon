@@ -1,5 +1,5 @@
 /**
- * Integration tests for @difft/macos-translate.
+ * Integration tests for local-translate-addon.
  *
  * NOTE: Translation.framework requires the main thread's RunLoop to be active
  * (the "Electron condition"). Plain `node` does not pump the main RunLoop, so
@@ -45,7 +45,7 @@ test('speech recognition exports offline controls', () => {
   assert.equal(typeof addon.recognizeSpeechWithOptions, 'undefined');
 });
 
-test('isLocalTranslateAvailable matches the macOS 26 boundary', () => {
+test('isTranslateTextSupport matches the macOS 26 boundary', () => {
   const addon = require(addonPath);
   const majorVersion = Number(
     execFileSync('/usr/bin/sw_vers', ['-productVersion'], { encoding: 'utf8' })
@@ -53,6 +53,18 @@ test('isLocalTranslateAvailable matches the macOS 26 boundary', () => {
       .split('.')[0]
   );
 
-  assert.equal(typeof addon.isLocalTranslateAvailable, 'function');
-  assert.equal(addon.isLocalTranslateAvailable(), majorVersion >= 26);
+  assert.equal(typeof addon.isTranslateTextSupport, 'function');
+  assert.equal(addon.isTranslateTextSupport(), majorVersion >= 26);
+});
+
+test('isRecognizeSpeechSupport mirrors speech capabilities', () => {
+  const addon = require(addonPath);
+  const caps = addon.getSpeechRecognitionCapabilities('en-US');
+
+  assert.equal(addon.isRecognizeSpeechSupport('en-US'), caps.isAvailable);
+  assert.equal(
+    addon.isRecognizeSpeechSupport('en-US', { onDeviceOnly: true }),
+    caps.isAvailable && caps.supportsOnDeviceRecognition
+  );
+  assert.equal(addon.isRecognizeSpeechSupport('xx-INVALID'), false);
 });

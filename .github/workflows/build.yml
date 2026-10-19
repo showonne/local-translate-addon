@@ -31,16 +31,8 @@ concurrency:
 
 jobs:
   build:
-    name: build - ${{ matrix.settings.target }}
+    name: Build universal macOS binary
     runs-on: macos-26
-    strategy:
-      fail-fast: false
-      matrix:
-        settings:
-          - target: aarch64-apple-darwin
-            build: npm run build -- --target aarch64-apple-darwin
-          - target: x86_64-apple-darwin
-            build: npm run build -- --target x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v4
 
@@ -53,7 +45,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.settings.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -63,58 +55,22 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ matrix.settings.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: universal-apple-darwin-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install dependencies
         run: npm install
 
       - name: Build
-        run: ${{ matrix.settings.build }}
-        shell: bash
+        run: npm run build:universal
+
+      - name: Test
+        run: npm test
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bindings-${{ matrix.settings.target }}
-          path: ${{ env.APP_NAME }}.*.node
-          if-no-files-found: error
-
-  universal-macos:
-    name: Build universal macOS binary
-    needs: build
-    runs-on: macos-26
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Download macOS arm64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-aarch64-apple-darwin
-          path: artifacts
-
-      - name: Download macOS x64 artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: bindings-x86_64-apple-darwin
-          path: artifacts
-
-      - name: Combine into universal binary
-        run: npm run universal
-
-      - name: Upload universal artifact
-        uses: actions/upload-artifact@v4
-        with:
           name: bindings-universal-apple-darwin
-          path: ${{ env.APP_NAME }}.*.node
+          path: ${{ env.APP_NAME }}.darwin-universal.node
           if-no-files-found: error
 
   publish:
@@ -122,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
     needs:
-      - universal-macos
+      - build
     steps:
       - uses: actions/checkout@v4
 

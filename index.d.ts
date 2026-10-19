@@ -15,19 +15,19 @@ export const enum TranslateErrorCode {
  * `ERR_TRANSLATE_UNSUPPORTED_OS_VERSION`,
  * `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
  */
-export declare function translateText(text: string, targetLang: string): Promise<unknown>
+export declare function translateText(text: string, targetLang: string): Promise<string>
 /** Check whether the current macOS version supports headless local translation. */
-export declare function isLocalTranslateAvailable(): boolean
+export declare function isTranslateTextSupport(): boolean
 /**
  * Request authorization to use speech recognition.
  * Returns "authorized" | "denied" | "restricted" | "notDetermined".
  */
-export declare function requestSpeechPermission(): Promise<unknown>
+export declare function requestSpeechPermission(): Promise<string>
 export interface SpeechRecognitionOptions {
   onDeviceOnly?: boolean
 }
 /** Recognize speech from an audio file, optionally requiring the system's local model. */
-export declare function recognizeSpeech(filePath: string, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<unknown>
+export declare function recognizeSpeech(filePath: string, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<string>
 export interface SpeechRecognitionCapabilities {
   isAvailable: boolean
   supportsOnDeviceRecognition: boolean
@@ -35,3 +35,8 @@ export interface SpeechRecognitionCapabilities {
 }
 /** Check whether the selected locale currently supports system speech recognition. */
 export declare function getSpeechRecognitionCapabilities(lang: string): SpeechRecognitionCapabilities
+/**
+ * Check whether `recognizeSpeech` can run for the locale and options.
+ * Authorization is not checked; use `requestSpeechPermission` for that.
+ */
+export declare function isRecognizeSpeechSupport(lang: string, options?: SpeechRecognitionOptions | undefined | null): boolean

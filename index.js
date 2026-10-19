@@ -310,11 +310,12 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { TranslateErrorCode, translateText, isLocalTranslateAvailable, requestSpeechPermission, recognizeSpeech, getSpeechRecognitionCapabilities } = nativeBinding
+const { TranslateErrorCode, translateText, isTranslateTextSupport, requestSpeechPermission, recognizeSpeech, getSpeechRecognitionCapabilities, isRecognizeSpeechSupport } = nativeBinding
 
 module.exports.TranslateErrorCode = TranslateErrorCode
 module.exports.translateText = translateText
-module.exports.isLocalTranslateAvailable = isLocalTranslateAvailable
+module.exports.isTranslateTextSupport = isTranslateTextSupport
 module.exports.requestSpeechPermission = requestSpeechPermission
 module.exports.recognizeSpeech = recognizeSpeech
 module.exports.getSpeechRecognitionCapabilities = getSpeechRecognitionCapabilities
+module.exports.isRecognizeSpeechSupport = isRecognizeSpeechSupport

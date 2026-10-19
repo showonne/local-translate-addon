@@ -10,7 +10,7 @@ use std::ffi::{CStr, CString};
 extern "C" {
     fn translate_text_ffi(text: *const i8, target_lang: *const i8) -> *mut i8;
     fn free_translate_result(ptr: *mut i8);
-    fn is_local_translate_available_ffi() -> bool;
+    fn is_translate_text_support_ffi() -> bool;
 
     fn recognize_speech_with_options_ffi(
         file_path: *const i8,
@@ -127,7 +127,7 @@ impl Task for TranslateTask {
 /// Rejects with an Error whose code is one of:
 /// `ERR_TRANSLATE_UNSUPPORTED_OS_VERSION`,
 /// `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
-#[napi]
+#[napi(ts_return_type = "Promise<string>")]
 pub fn translate_text(text: String, target_lang: String) -> AsyncTask<TranslateTask> {
     AsyncTask::new(TranslateTask {
         text,
@@ -138,8 +138,8 @@ pub fn translate_text(text: String, target_lang: String) -> AsyncTask<TranslateT
 
 /// Check whether the current macOS version supports headless local translation.
 #[napi]
-pub fn is_local_translate_available() -> bool {
-    unsafe { is_local_translate_available_ffi() }
+pub fn is_translate_text_support() -> bool {
+    unsafe { is_translate_text_support_ffi() }
 }
 
 // ── requestSpeechPermission ───────────────────────────────────────────────────
@@ -167,7 +167,7 @@ impl Task for RequestSpeechPermissionTask {
 
 /// Request authorization to use speech recognition.
 /// Returns "authorized" | "denied" | "restricted" | "notDetermined".
-#[napi]
+#[napi(ts_return_type = "Promise<string>")]
 pub fn request_speech_permission() -> AsyncTask<RequestSpeechPermissionTask> {
     AsyncTask::new(RequestSpeechPermissionTask)
 }
@@ -196,7 +196,7 @@ impl Task for RecognizeSpeechTask {
             )
         };
         if ptr.is_null() {
-            return Err(Error::from_reason("recognize_speech_ffi returned null"));
+            return Err(Error::from_reason("recognize_speech_with_options_ffi returned null"));
         }
         let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
         unsafe { free_speech_result(ptr) };
@@ -219,7 +219,7 @@ pub struct SpeechRecognitionOptions {
 }
 
 /// Recognize speech from an audio file, optionally requiring the system's local model.
-#[napi]
+#[napi(ts_return_type = "Promise<string>")]
 pub fn recognize_speech(
     file_path: String,
     lang: String,
@@ -239,18 +239,39 @@ pub struct SpeechRecognitionCapabilities {
     pub is_authorized: bool,
 }
 
+impl SpeechRecognitionCapabilities {
+    fn from_bits(bits: u32) -> Self {
+        Self {
+            is_available: bits & 1 != 0,
+            supports_on_device_recognition: bits & (1 << 1) != 0,
+            is_authorized: bits & (1 << 2) != 0,
+        }
+    }
+
+    fn supports(&self, on_device_only: bool) -> bool {
+        self.is_available && (!on_device_only || self.supports_on_device_recognition)
+    }
+}
+
 /// Check whether the selected locale currently supports system speech recognition.
 #[napi]
 pub fn get_speech_recognition_capabilities(
     lang: String,
 ) -> Result<SpeechRecognitionCapabilities> {
     let c_lang = cstring(&lang)?;
-    let capabilities = unsafe { speech_recognition_capabilities_ffi(c_lang.as_ptr()) };
-    Ok(SpeechRecognitionCapabilities {
-        is_available: capabilities & 1 != 0,
-        supports_on_device_recognition: capabilities & (1 << 1) != 0,
-        is_authorized: capabilities & (1 << 2) != 0,
-    })
+    let bits = unsafe { speech_recognition_capabilities_ffi(c_lang.as_ptr()) };
+    Ok(SpeechRecognitionCapabilities::from_bits(bits))
+}
+
+/// Check whether `recognizeSpeech` can run for the locale and options.
+/// Authorization is not checked; use `requestSpeechPermission` for that.
+#[napi]
+pub fn is_recognize_speech_support(
+    lang: String,
+    options: Option<SpeechRecognitionOptions>,
+) -> Result<bool> {
+    let on_device_only = options.and_then(|options| options.on_device_only).unwrap_or(false);
+    Ok(get_speech_recognition_capabilities(lang)?.supports(on_device_only))
 }
 
 #[cfg(test)]
@@ -294,8 +315,20 @@ mod tests {
     }
 
     #[test]
-    fn exposes_swift_local_translate_availability() {
-        let ffi_result = unsafe { is_local_translate_available_ffi() };
-        assert_eq!(is_local_translate_available(), ffi_result);
+    fn speech_support_requires_availability() {
+        assert!(!SpeechRecognitionCapabilities::from_bits(0b110).supports(false));
+        assert!(SpeechRecognitionCapabilities::from_bits(0b001).supports(false));
+    }
+
+    #[test]
+    fn on_device_speech_support_requires_local_model() {
+        assert!(!SpeechRecognitionCapabilities::from_bits(0b001).supports(true));
+        assert!(SpeechRecognitionCapabilities::from_bits(0b011).supports(true));
+    }
+
+    #[test]
+    fn exposes_swift_translate_text_support() {
+        let ffi_result = unsafe { is_translate_text_support_ffi() };
+        assert_eq!(is_translate_text_support(), ffi_result);
     }
 }

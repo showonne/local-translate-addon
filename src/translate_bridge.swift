@@ -7,8 +7,8 @@ private enum TranslateErrorCode: String {
     case failed = "ERR_TRANSLATE_FAILED"
 }
 
-@_cdecl("is_local_translate_available_ffi")
-public func isLocalTranslateAvailableFfi() -> Bool {
+@_cdecl("is_translate_text_support_ffi")
+public func isTranslateTextSupportFfi() -> Bool {
     if #available(macOS 26, *) {
         return true
     }

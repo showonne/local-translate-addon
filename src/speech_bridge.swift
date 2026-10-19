@@ -24,24 +24,6 @@ public func requestSpeechPermissionFfi() -> UnsafeMutablePointer<CChar>? {
     return strdup(status)
 }
 
-/// Recognize speech from an audio file.
-/// filePath: absolute path to audio file (WAV, M4A, FLAC, MP3, etc.)
-/// lang:     BCP-47 locale identifier, e.g. "en-US", "zh-CN"
-/// Returns a heap-allocated C string with the transcription.
-/// On error, returns a string starting with "__error__:".
-/// Caller must free with free_speech_result().
-@_cdecl("recognize_speech_ffi")
-public func recognizeSpeechFfi(
-    filePathPtr: UnsafePointer<CChar>,
-    langPtr: UnsafePointer<CChar>
-) -> UnsafeMutablePointer<CChar>? {
-    recognizeSpeechWithOptionsFfi(
-        filePathPtr: filePathPtr,
-        langPtr: langPtr,
-        onDeviceOnly: false
-    )
-}
-
 /// Returns bit flags for the requested locale:
 /// bit 0 = recognizer available, bit 1 = on-device recognition supported,
 /// bit 2 = speech permission granted.
@@ -116,7 +98,7 @@ public func recognizeSpeechWithOptionsFfi(
         }
     }
 
-    sema.wait()
+    withExtendedLifetime(recognizer) { sema.wait() }
     return strdup(result)
 }
 
