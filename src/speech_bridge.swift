@@ -1,3 +1,5 @@
+import AudioToolbox
+import AVFAudio
 import Foundation
 import Speech
 
@@ -47,16 +49,38 @@ public func speechRecognitionCapabilitiesFfi(_ langPtr: UnsafePointer<CChar>) ->
     return capabilities
 }
 
-/// Recognize speech, optionally rejecting any recognition that cannot run locally.
-@_cdecl("recognize_speech_with_options_ffi")
-public func recognizeSpeechWithOptionsFfi(
-    filePathPtr: UnsafePointer<CChar>,
-    langPtr: UnsafePointer<CChar>,
-    onDeviceOnly: Bool
-) -> UnsafeMutablePointer<CChar>? {
-    let filePath = String(cString: filePathPtr)
-    let lang = String(cString: langPtr)
+struct SpeechBridgeError: Error {
+    let message: String
+}
 
+struct AudioDecodeError: Error {
+    let status: OSStatus
+}
+
+func makeRecognizer(lang: String, onDeviceOnly: Bool) -> Result<SFSpeechRecognizer, SpeechBridgeError> {
+    let authStatus = SFSpeechRecognizer.authorizationStatus()
+    guard authStatus == .authorized else {
+        return .failure(SpeechBridgeError(message: "Speech recognition not authorized (status: \(authStatus.rawValue)). Call requestSpeechPermission() first."))
+    }
+
+    let locale = Locale(identifier: lang)
+    guard let recognizer = SFSpeechRecognizer(locale: locale) else {
+        return .failure(SpeechBridgeError(message: "SFSpeechRecognizer could not be created for locale: \(lang)"))
+    }
+    guard recognizer.isAvailable else {
+        return .failure(SpeechBridgeError(message: "Speech recognizer is not available for locale: \(lang)"))
+    }
+    if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
+        return .failure(SpeechBridgeError(message: "On-device speech recognition is not available for locale: \(lang)"))
+    }
+    return .success(recognizer)
+}
+
+func runRecognition(
+    recognizer: SFSpeechRecognizer,
+    request: SFSpeechRecognitionRequest,
+    feed: (() -> Void)?
+) -> String {
     var result = "__error__:unknown"
     let sema = DispatchSemaphore(value: 0)
     var signaled = false
@@ -68,20 +92,147 @@ public func recognizeSpeechWithOptionsFfi(
         sema.signal()
     }
 
-    let authStatus = SFSpeechRecognizer.authorizationStatus()
-    guard authStatus == .authorized else {
-        return strdup("__error__:Speech recognition not authorized (status: \(authStatus.rawValue)). Call requestSpeechPermission() first.")
+    recognizer.recognitionTask(with: request) { speechResult, error in
+        if let error = error {
+            signal("__error__:\(error.localizedDescription)")
+        } else if let speechResult = speechResult, speechResult.isFinal {
+            signal(speechResult.bestTranscription.formattedString)
+        }
+    }
+    feed?()
+
+    withExtendedLifetime(recognizer) { sema.wait() }
+    return result
+}
+
+final class MemoryAudioSource {
+    let bytes: UnsafeRawPointer
+    let length: Int
+
+    init(bytes: UnsafeRawPointer, length: Int) {
+        self.bytes = bytes
+        self.length = length
     }
 
-    let locale = Locale(identifier: lang)
-    guard let recognizer = SFSpeechRecognizer(locale: locale) else {
-        return strdup("__error__:SFSpeechRecognizer could not be created for locale: \(lang)")
+    static let readProc: AudioFile_ReadProc = { clientData, position, requestCount, buffer, actualCount in
+        let source = Unmanaged<MemoryAudioSource>.fromOpaque(clientData).takeUnretainedValue()
+        let length = Int64(source.length)
+        let start = min(max(position, 0), length)
+        let end = min(start + Int64(requestCount), length)
+        let count = Int(end - start)
+        if count > 0 {
+            memcpy(buffer, source.bytes.advanced(by: Int(start)), count)
+        }
+        actualCount.pointee = UInt32(count)
+        return noErr
     }
-    guard recognizer.isAvailable else {
-        return strdup("__error__:Speech recognizer is not available for locale: \(lang)")
+
+    static let getSizeProc: AudioFile_GetSizeProc = { clientData in
+        Int64(Unmanaged<MemoryAudioSource>.fromOpaque(clientData).takeUnretainedValue().length)
     }
-    if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
-        return strdup("__error__:On-device speech recognition is not available for locale: \(lang)")
+}
+
+private let audioFileTypeHints: [AudioFileTypeID] = [
+    0,
+    kAudioFileAAC_ADTSType,
+    kAudioFileMP3Type,
+    kAudioFileM4AType,
+    kAudioFileWAVEType,
+]
+
+private let decodeFrameCapacity: AVAudioFrameCount = 8192
+
+private func openAudioFile(source: MemoryAudioSource) throws -> AudioFileID {
+    let clientData = Unmanaged.passUnretained(source).toOpaque()
+    var lastStatus: OSStatus = noErr
+    for hint in audioFileTypeHints {
+        var fileID: AudioFileID?
+        lastStatus = AudioFileOpenWithCallbacks(
+            clientData,
+            MemoryAudioSource.readProc,
+            nil,
+            MemoryAudioSource.getSizeProc,
+            nil,
+            hint,
+            &fileID
+        )
+        if lastStatus == noErr, let fileID = fileID {
+            return fileID
+        }
+    }
+    throw AudioDecodeError(status: lastStatus)
+}
+
+func decodePcmBuffers(bytes: UnsafeRawPointer, length: Int) throws -> (format: AVAudioFormat, buffers: [AVAudioPCMBuffer]) {
+    let source = MemoryAudioSource(bytes: bytes, length: length)
+    return try withExtendedLifetime(source) {
+        let fileID = try openAudioFile(source: source)
+        defer { AudioFileClose(fileID) }
+
+        var extFile: ExtAudioFileRef?
+        var status = ExtAudioFileWrapAudioFileID(fileID, false, &extFile)
+        guard status == noErr, let ext = extFile else {
+            throw AudioDecodeError(status: status)
+        }
+        defer { ExtAudioFileDispose(ext) }
+
+        var fileFormat = AudioStreamBasicDescription()
+        var propertySize = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        status = ExtAudioFileGetProperty(ext, kExtAudioFileProperty_FileDataFormat, &propertySize, &fileFormat)
+        guard status == noErr else {
+            throw AudioDecodeError(status: status)
+        }
+
+        let channels = fileFormat.mChannelsPerFrame == 0 ? 1 : fileFormat.mChannelsPerFrame
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: fileFormat.mSampleRate, channels: channels) else {
+            throw AudioDecodeError(status: kAudio_ParamError)
+        }
+
+        status = ExtAudioFileSetProperty(
+            ext,
+            kExtAudioFileProperty_ClientDataFormat,
+            UInt32(MemoryLayout<AudioStreamBasicDescription>.size),
+            format.streamDescription
+        )
+        guard status == noErr else {
+            throw AudioDecodeError(status: status)
+        }
+
+        var buffers: [AVAudioPCMBuffer] = []
+        while true {
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: decodeFrameCapacity) else {
+                throw AudioDecodeError(status: kAudio_MemFullError)
+            }
+            buffer.frameLength = buffer.frameCapacity
+            var frames = buffer.frameCapacity
+            status = ExtAudioFileRead(ext, &frames, buffer.mutableAudioBufferList)
+            guard status == noErr else {
+                throw AudioDecodeError(status: status)
+            }
+            buffer.frameLength = frames
+            if frames == 0 {
+                break
+            }
+            buffers.append(buffer)
+        }
+        return (format, buffers)
+    }
+}
+
+/// Recognize speech, optionally rejecting any recognition that cannot run locally.
+@_cdecl("recognize_speech_with_options_ffi")
+public func recognizeSpeechWithOptionsFfi(
+    filePathPtr: UnsafePointer<CChar>,
+    langPtr: UnsafePointer<CChar>,
+    onDeviceOnly: Bool
+) -> UnsafeMutablePointer<CChar>? {
+    let filePath = String(cString: filePathPtr)
+    let lang = String(cString: langPtr)
+
+    let recognizer: SFSpeechRecognizer
+    switch makeRecognizer(lang: lang, onDeviceOnly: onDeviceOnly) {
+    case .success(let value): recognizer = value
+    case .failure(let error): return strdup("__error__:\(error.message)")
     }
 
     let url = URL(fileURLWithPath: filePath)
@@ -90,16 +241,43 @@ public func recognizeSpeechWithOptionsFfi(
     request.addsPunctuation = true
     request.requiresOnDeviceRecognition = onDeviceOnly
 
-    recognizer.recognitionTask(with: request) { speechResult, error in
-        if let error = error {
-            signal("__error__:\(error.localizedDescription)")
-        } else if let speechResult = speechResult, speechResult.isFinal {
-            signal(speechResult.bestTranscription.formattedString)
-        }
+    return strdup(runRecognition(recognizer: recognizer, request: request, feed: nil))
+}
+
+@_cdecl("recognize_speech_buffer_ffi")
+public func recognizeSpeechBufferFfi(
+    bytes: UnsafePointer<UInt8>,
+    length: Int,
+    langPtr: UnsafePointer<CChar>,
+    onDeviceOnly: Bool
+) -> UnsafeMutablePointer<CChar>? {
+    let lang = String(cString: langPtr)
+
+    let recognizer: SFSpeechRecognizer
+    switch makeRecognizer(lang: lang, onDeviceOnly: onDeviceOnly) {
+    case .success(let value): recognizer = value
+    case .failure(let error): return strdup("__error__:\(error.message)")
     }
 
-    withExtendedLifetime(recognizer) { sema.wait() }
-    return strdup(result)
+    let buffers: [AVAudioPCMBuffer]
+    do {
+        buffers = try decodePcmBuffers(bytes: UnsafeRawPointer(bytes), length: length).buffers
+    } catch {
+        let status = (error as? AudioDecodeError)?.status ?? kAudio_ParamError
+        return strdup("__error__:Audio decode failed (\(status))")
+    }
+
+    let request = SFSpeechAudioBufferRecognitionRequest()
+    request.shouldReportPartialResults = false
+    request.addsPunctuation = true
+    request.requiresOnDeviceRecognition = onDeviceOnly
+
+    return strdup(runRecognition(recognizer: recognizer, request: request) {
+        for buffer in buffers {
+            request.append(buffer)
+        }
+        request.endAudio()
+    })
 }
 
 @_cdecl("free_speech_result")

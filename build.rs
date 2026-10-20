@@ -48,6 +48,8 @@ fn main() {
     println!("cargo:rustc-link-lib=framework=Foundation");
     println!("cargo:rustc-link-lib=framework=Translation");
     println!("cargo:rustc-link-lib=framework=Speech");
+    println!("cargo:rustc-link-lib=framework=AudioToolbox");
+    println!("cargo:rustc-link-lib=framework=AVFAudio");
     println!("cargo:rustc-link-search=/usr/lib/swift");
     println!("cargo:rustc-link-lib=swiftFoundation");
     println!("cargo:rustc-link-lib=swiftCore");
