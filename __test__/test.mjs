@@ -18,6 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 
 const addonPath = join(__dirname, '..');
+const { createLocalTranslate } = require('../entry.js');
 
 test('addon loads without error', () => {
   const addon = require(addonPath);
@@ -32,6 +33,7 @@ test('translateText is exported as a function', () => {
 test('TranslateErrorCode exports stable error codes', () => {
   const addon = require(addonPath);
   assert.deepEqual(addon.TranslateErrorCode, {
+    UNSUPPORTED_PLATFORM: 'ERR_TRANSLATE_UNSUPPORTED_PLATFORM',
     UNSUPPORT_OS_VERSION: 'ERR_TRANSLATE_UNSUPPORTED_OS_VERSION',
     LANGUAGE_PAIR_NOT_INSTALLED: 'ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED',
     FAILED: 'ERR_TRANSLATE_FAILED',
@@ -67,4 +69,51 @@ test('isRecognizeSpeechSupport mirrors speech capabilities', () => {
     caps.isAvailable && caps.supportsOnDeviceRecognition
   );
   assert.equal(addon.isRecognizeSpeechSupport('xx-INVALID'), false);
+});
+
+test('entry error codes cover every native error code', () => {
+  const binding = require('../binding.js');
+  const addon = require(addonPath);
+  for (const [key, value] of Object.entries(binding.TranslateErrorCode)) {
+    assert.equal(addon.TranslateErrorCode[key], value);
+  }
+});
+
+test('package entry exposes exactly the public API', () => {
+  const addon = require(addonPath);
+  assert.deepEqual(Object.keys(addon).sort(), [
+    'TranslateErrorCode',
+    'getSpeechRecognitionCapabilities',
+    'isRecognizeSpeechSupport',
+    'isTranslateTextSupport',
+    'recognizeSpeech',
+    'requestSpeechPermission',
+    'translateText',
+  ]);
+});
+
+test('entry falls back when the native binding cannot load', async () => {
+  const api = createLocalTranslate(() => {
+    throw new Error('dlopen failed');
+  });
+
+  assert.equal(api.isTranslateTextSupport(), false);
+  assert.equal(api.isRecognizeSpeechSupport('en-US', { onDeviceOnly: true }), false);
+  assert.deepEqual(api.getSpeechRecognitionCapabilities('en-US'), {
+    isAvailable: false,
+    supportsOnDeviceRecognition: false,
+    isAuthorized: false,
+  });
+
+  for (const pending of [
+    api.translateText('hello', 'zh-Hans'),
+    api.requestSpeechPermission(),
+    api.recognizeSpeech('/tmp/a.m4a', 'en-US'),
+  ]) {
+    await assert.rejects(pending, error => {
+      assert.equal(error.code, 'ERR_TRANSLATE_UNSUPPORTED_PLATFORM');
+      assert.equal(error.cause.message, 'dlopen failed');
+      return true;
+    });
+  }
 });

@@ -1,22 +1,25 @@
 {
   "name": "local-translate-addon",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "macOS Translation.framework via napi-rs",
   "main": "index.js",
   "types": "index.d.ts",
   "files": [
     "index.js",
-    "index.d.ts"
+    "index.d.ts",
+    "entry.js",
+    "binding.js",
+    "binding.d.ts"
   ],
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release --js binding.js --dts binding.d.ts",
+    "build:debug": "napi build --platform --js binding.js --dts binding.d.ts",
     "prepublishOnly": "napi prepublish -t npm",
     "universal": "napi universal",
     "version": "napi version",
-    "test": "node --test __test__/test.mjs",
-    "build:universal": "napi build --platform --release --target aarch64-apple-darwin && napi build --platform --release --target x86_64-apple-darwin && napi universal -d ."
+    "test": "node --test __test__/test.mjs __test__/esm.test.mjs",
+    "build:universal": "napi build --platform --release --target aarch64-apple-darwin --js binding.js --dts binding.d.ts && napi build --platform --release --target x86_64-apple-darwin --js binding.js --dts binding.d.ts && napi universal -d ."
   },
   "napi": {
     "name": "local-translate-addon",
