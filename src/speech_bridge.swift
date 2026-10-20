@@ -73,6 +73,9 @@ func makeRecognizer(lang: String, onDeviceOnly: Bool) -> Result<SFSpeechRecogniz
     if onDeviceOnly && !recognizer.supportsOnDeviceRecognition {
         return .failure(SpeechBridgeError(message: "On-device speech recognition is not available for locale: \(lang)"))
     }
+    let callbackQueue = OperationQueue()
+    callbackQueue.maxConcurrentOperationCount = 1
+    recognizer.queue = callbackQueue
     return .success(recognizer)
 }
 
@@ -142,6 +145,8 @@ private let audioFileTypeHints: [AudioFileTypeID] = [
 
 private let decodeFrameCapacity: AVAudioFrameCount = 8192
 
+private let maxAudioSeconds = 600
+
 private func openAudioFile(source: MemoryAudioSource) throws -> AudioFileID {
     let clientData = Unmanaged.passUnretained(source).toOpaque()
     var lastStatus: OSStatus = noErr
@@ -183,8 +188,7 @@ func decodePcmBuffers(bytes: UnsafeRawPointer, length: Int) throws -> (format: A
             throw AudioDecodeError(status: status)
         }
 
-        let channels = fileFormat.mChannelsPerFrame == 0 ? 1 : fileFormat.mChannelsPerFrame
-        guard let format = AVAudioFormat(standardFormatWithSampleRate: fileFormat.mSampleRate, channels: channels) else {
+        guard let format = AVAudioFormat(standardFormatWithSampleRate: fileFormat.mSampleRate, channels: 1) else {
             throw AudioDecodeError(status: kAudio_ParamError)
         }
 
@@ -198,7 +202,18 @@ func decodePcmBuffers(bytes: UnsafeRawPointer, length: Int) throws -> (format: A
             throw AudioDecodeError(status: status)
         }
 
+        let maxFrames = Int64(Double(maxAudioSeconds) * format.sampleRate)
+        let tooLong = SpeechBridgeError(message: "Audio exceeds \(maxAudioSeconds) seconds")
+
+        var declaredFrames: Int64 = 0
+        var framesSize = UInt32(MemoryLayout<Int64>.size)
+        if ExtAudioFileGetProperty(ext, kExtAudioFileProperty_FileLengthFrames, &framesSize, &declaredFrames) == noErr,
+           declaredFrames > maxFrames {
+            throw tooLong
+        }
+
         var buffers: [AVAudioPCMBuffer] = []
+        var totalFrames: Int64 = 0
         while true {
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: decodeFrameCapacity) else {
                 throw AudioDecodeError(status: kAudio_MemFullError)
@@ -212,6 +227,10 @@ func decodePcmBuffers(bytes: UnsafeRawPointer, length: Int) throws -> (format: A
             buffer.frameLength = frames
             if frames == 0 {
                 break
+            }
+            totalFrames += Int64(frames)
+            if totalFrames > maxFrames {
+                throw tooLong
             }
             buffers.append(buffer)
         }
@@ -262,9 +281,15 @@ public func recognizeSpeechBufferFfi(
     let buffers: [AVAudioPCMBuffer]
     do {
         buffers = try decodePcmBuffers(bytes: UnsafeRawPointer(bytes), length: length).buffers
+    } catch let error as SpeechBridgeError {
+        return strdup("__error__:\(error.message)")
     } catch {
         let status = (error as? AudioDecodeError)?.status ?? kAudio_ParamError
         return strdup("__error__:Audio decode failed (\(status))")
+    }
+
+    if buffers.allSatisfy({ $0.frameLength == 0 }) {
+        return strdup("__error__:No audio frames decoded")
     }
 
     let request = SFSpeechAudioBufferRecognitionRequest()

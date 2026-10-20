@@ -322,7 +322,7 @@ pub fn get_speech_recognition_capabilities(
     Ok(SpeechRecognitionCapabilities::from_bits(bits))
 }
 
-/// Check whether `recognizeSpeech` can run for the locale and options.
+/// Check whether `recognizeSpeech` / `recognizeSpeechBuffer` can run for the locale and options.
 /// Authorization is not checked; use `requestSpeechPermission` for that.
 #[napi]
 pub fn is_recognize_speech_support(

@@ -44,7 +44,7 @@ export declare function recognizeSpeechBuffer(
 /** Check whether the selected locale currently supports system speech recognition. */
 export declare function getSpeechRecognitionCapabilities(lang: string): import('./binding').SpeechRecognitionCapabilities
 /**
- * Check whether `recognizeSpeech` can run for the locale and options.
+ * Check whether `recognizeSpeech` / `recognizeSpeechBuffer` can run for the locale and options.
  * Authorization is not checked; use `requestSpeechPermission` for that.
  */
 export declare function isRecognizeSpeechSupport(
