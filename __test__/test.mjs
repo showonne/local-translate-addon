@@ -44,6 +44,7 @@ test('speech recognition exports offline controls', () => {
   const addon = require(addonPath);
   assert.equal(typeof addon.getSpeechRecognitionCapabilities, 'function');
   assert.equal(typeof addon.recognizeSpeech, 'function');
+  assert.equal(typeof addon.recognizeSpeechBuffer, 'function');
   assert.equal(typeof addon.recognizeSpeechWithOptions, 'undefined');
 });
 
@@ -87,6 +88,7 @@ test('package entry exposes exactly the public API', () => {
     'isRecognizeSpeechSupport',
     'isTranslateTextSupport',
     'recognizeSpeech',
+    'recognizeSpeechBuffer',
     'requestSpeechPermission',
     'translateText',
   ]);
@@ -116,4 +118,15 @@ test('entry falls back when the native binding cannot load', async () => {
       return true;
     });
   }
+});
+
+test('entry falls back for recognizeSpeechBuffer', async () => {
+  const api = createLocalTranslate(() => {
+    throw new Error('nope');
+  });
+
+  await assert.rejects(api.recognizeSpeechBuffer(new Uint8Array(), 'en-US'), error => {
+    assert.equal(error.code, 'ERR_TRANSLATE_UNSUPPORTED_PLATFORM');
+    return true;
+  });
 });

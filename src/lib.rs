@@ -17,6 +17,12 @@ extern "C" {
         lang: *const i8,
         on_device_only: bool,
     ) -> *mut i8;
+    fn recognize_speech_buffer_ffi(
+        bytes: *const u8,
+        len: usize,
+        lang: *const i8,
+        on_device_only: bool,
+    ) -> *mut i8;
     fn speech_recognition_capabilities_ffi(lang: *const i8) -> u32;
     fn request_speech_permission_ffi() -> *mut i8;
     fn free_speech_result(ptr: *mut i8);
@@ -227,6 +233,59 @@ pub fn recognize_speech(
 ) -> AsyncTask<RecognizeSpeechTask> {
     AsyncTask::new(RecognizeSpeechTask {
         file_path,
+        lang,
+        on_device_only: options.and_then(|options| options.on_device_only).unwrap_or(false),
+    })
+}
+
+pub struct RecognizeSpeechBufferTask {
+    audio: Vec<u8>,
+    lang: String,
+    on_device_only: bool,
+}
+
+impl Task for RecognizeSpeechBufferTask {
+    type Output = String;
+    type JsValue = String;
+
+    fn compute(&mut self) -> Result<Self::Output> {
+        let c_lang = cstring(&self.lang)?;
+
+        let ptr = unsafe {
+            recognize_speech_buffer_ffi(
+                self.audio.as_ptr(),
+                self.audio.len(),
+                c_lang.as_ptr(),
+                self.on_device_only,
+            )
+        };
+        if ptr.is_null() {
+            return Err(Error::from_reason("recognize_speech_buffer_ffi returned null"));
+        }
+        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
+        unsafe { free_speech_result(ptr) };
+
+        if let Some(msg) = result.strip_prefix("__error__:") {
+            Err(Error::from_reason(msg.to_string()))
+        } else {
+            Ok(result)
+        }
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+/// Recognize speech from in-memory audio data (mp3 / m4a / adts / wav).
+#[napi(ts_return_type = "Promise<string>")]
+pub fn recognize_speech_buffer(
+    audio: Uint8Array,
+    lang: String,
+    options: Option<SpeechRecognitionOptions>,
+) -> AsyncTask<RecognizeSpeechBufferTask> {
+    AsyncTask::new(RecognizeSpeechBufferTask {
+        audio: audio.to_vec(),
         lang,
         on_device_only: options.and_then(|options| options.on_device_only).unwrap_or(false),
     })

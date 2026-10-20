@@ -30,6 +30,7 @@ function createLocalTranslate(loadBinding) {
       isTranslateTextSupport: binding.isTranslateTextSupport,
       requestSpeechPermission: binding.requestSpeechPermission,
       recognizeSpeech: binding.recognizeSpeech,
+      recognizeSpeechBuffer: binding.recognizeSpeechBuffer,
       getSpeechRecognitionCapabilities: binding.getSpeechRecognitionCapabilities,
       isRecognizeSpeechSupport: binding.isRecognizeSpeechSupport,
     };
@@ -45,6 +46,7 @@ function createLocalTranslate(loadBinding) {
     isTranslateTextSupport: () => false,
     requestSpeechPermission: reject,
     recognizeSpeech: reject,
+    recognizeSpeechBuffer: reject,
     getSpeechRecognitionCapabilities: () => ({
       isAvailable: false,
       supportsOnDeviceRecognition: false,

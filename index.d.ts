@@ -32,6 +32,15 @@ export declare function recognizeSpeech(
   lang: string,
   options?: import('./binding').SpeechRecognitionOptions | undefined | null
 ): Promise<string>
+/**
+ * Recognize speech from in-memory audio data (mp3 / m4a / adts / wav), optionally requiring the system's local model.
+ * Rejects with `ERR_TRANSLATE_UNSUPPORTED_PLATFORM` when the native addon is unavailable.
+ */
+export declare function recognizeSpeechBuffer(
+  audio: Uint8Array,
+  lang: string,
+  options?: import('./binding').SpeechRecognitionOptions | undefined | null
+): Promise<string>
 /** Check whether the selected locale currently supports system speech recognition. */
 export declare function getSpeechRecognitionCapabilities(lang: string): import('./binding').SpeechRecognitionCapabilities
 /**

@@ -28,6 +28,8 @@ export interface SpeechRecognitionOptions {
 }
 /** Recognize speech from an audio file, optionally requiring the system's local model. */
 export declare function recognizeSpeech(filePath: string, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<string>
+/** Recognize speech from in-memory audio data (mp3 / m4a / adts / wav). */
+export declare function recognizeSpeechBuffer(audio: Uint8Array, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<string>
 export interface SpeechRecognitionCapabilities {
   isAvailable: boolean
   supportsOnDeviceRecognition: boolean

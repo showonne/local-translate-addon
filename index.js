@@ -6,6 +6,7 @@ const {
   isTranslateTextSupport,
   requestSpeechPermission,
   recognizeSpeech,
+  recognizeSpeechBuffer,
   getSpeechRecognitionCapabilities,
   isRecognizeSpeechSupport,
 } = createLocalTranslate(() => require('./binding'));
@@ -16,6 +17,7 @@ module.exports = {
   isTranslateTextSupport,
   requestSpeechPermission,
   recognizeSpeech,
+  recognizeSpeechBuffer,
   getSpeechRecognitionCapabilities,
   isRecognizeSpeechSupport,
 };
