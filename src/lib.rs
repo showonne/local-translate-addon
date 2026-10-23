@@ -39,6 +39,7 @@ fn cstring(s: &str) -> Result<CString> {
 const TRANSLATE_ERROR_PREFIX: &str = "__error__:";
 const ERR_TRANSLATE_UNSUPPORTED_OS_VERSION: &str = "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION";
 const ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED: &str = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED";
+const ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY: &str = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY";
 const ERR_TRANSLATE_FAILED: &str = "ERR_TRANSLATE_FAILED";
 
 #[allow(non_camel_case_types)]
@@ -48,6 +49,8 @@ pub enum TranslateErrorCode {
     UNSUPPORT_OS_VERSION,
     #[napi(value = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED")]
     LANGUAGE_PAIR_NOT_INSTALLED,
+    #[napi(value = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY")]
+    LANGUAGE_PAIR_NOT_READY,
     #[napi(value = "ERR_TRANSLATE_FAILED")]
     FAILED,
 }
@@ -73,6 +76,7 @@ fn decode_translate_result(result: String) -> std::result::Result<String, Transl
     let code = match code {
         ERR_TRANSLATE_UNSUPPORTED_OS_VERSION => ERR_TRANSLATE_UNSUPPORTED_OS_VERSION,
         ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED => ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED,
+        ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY => ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY,
         ERR_TRANSLATE_FAILED => ERR_TRANSLATE_FAILED,
         _ => ERR_TRANSLATE_FAILED,
     };
@@ -132,7 +136,8 @@ impl Task for TranslateTask {
 ///
 /// Rejects with an Error whose code is one of:
 /// `ERR_TRANSLATE_UNSUPPORTED_OS_VERSION`,
-/// `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
+/// `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY`,
+/// or `ERR_TRANSLATE_FAILED`.
 #[napi(ts_return_type = "Promise<string>")]
 pub fn translate_text(text: String, target_lang: String) -> AsyncTask<TranslateTask> {
     AsyncTask::new(TranslateTask {
@@ -352,7 +357,7 @@ mod tests {
     #[test]
     fn decodes_missing_language_pair_translation_error() {
         let failure = decode_translate_result(
-            "__error__:ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED:No installed language pair found for target: zh-Hans"
+            "__error__:ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED:No installed language pair for target: zh-Hans"
                 .to_string(),
         )
         .unwrap_err();
@@ -360,8 +365,19 @@ mod tests {
         assert_eq!(failure.code, "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED");
         assert_eq!(
             failure.message,
-            "No installed language pair found for target: zh-Hans"
+            "No installed language pair for target: zh-Hans"
         );
+    }
+
+    #[test]
+    fn decodes_not_ready_language_pair_translation_error() {
+        let failure = decode_translate_result(
+            "__error__:ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY:Language availability for target en was not ready within 2.0 seconds"
+                .to_string(),
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY");
     }
 
     #[test]

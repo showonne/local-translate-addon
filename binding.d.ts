@@ -6,6 +6,7 @@
 export const enum TranslateErrorCode {
   UNSUPPORT_OS_VERSION = 'ERR_TRANSLATE_UNSUPPORTED_OS_VERSION',
   LANGUAGE_PAIR_NOT_INSTALLED = 'ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED',
+  LANGUAGE_PAIR_NOT_READY = 'ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY',
   FAILED = 'ERR_TRANSLATE_FAILED'
 }
 /**
@@ -13,7 +14,8 @@ export const enum TranslateErrorCode {
  *
  * Rejects with an Error whose code is one of:
  * `ERR_TRANSLATE_UNSUPPORTED_OS_VERSION`,
- * `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, or `ERR_TRANSLATE_FAILED`.
+ * `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED`, `ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY`,
+ * or `ERR_TRANSLATE_FAILED`.
  */
 export declare function translateText(text: string, targetLang: string): Promise<string>
 /** Check whether the current macOS version supports headless local translation. */
