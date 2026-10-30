@@ -20,27 +20,31 @@ export const enum TranslateErrorCode {
 export declare function translateText(text: string, targetLang: string): Promise<string>
 /** Check whether the current macOS version supports headless local translation. */
 export declare function isTranslateTextSupport(): boolean
-/**
- * Request authorization to use speech recognition.
- * Returns "authorized" | "denied" | "restricted" | "notDetermined".
- */
-export declare function requestSpeechPermission(): Promise<string>
-export interface SpeechRecognitionOptions {
-  onDeviceOnly?: boolean
+export const enum TranscribeErrorCode {
+  UNSUPPORTED_OS_VERSION = 'ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION',
+  UNSUPPORTED_LANGUAGE = 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE',
+  MODEL_NOT_INSTALLED = 'ERR_TRANSCRIBE_MODEL_NOT_INSTALLED',
+  MODEL_DOWNLOAD_FAILED = 'ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED',
+  AUDIO_DECODE_FAILED = 'ERR_TRANSCRIBE_AUDIO_DECODE_FAILED',
+  AUDIO_TOO_LONG = 'ERR_TRANSCRIBE_AUDIO_TOO_LONG',
+  TIMEOUT = 'ERR_TRANSCRIBE_TIMEOUT',
+  FAILED = 'ERR_TRANSCRIBE_FAILED'
 }
-/** Recognize speech from an audio file, optionally requiring the system's local model. */
-export declare function recognizeSpeech(filePath: string, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<string>
-/** Recognize speech from in-memory audio data (mp3 / m4a / adts / wav). */
-export declare function recognizeSpeechBuffer(audio: Uint8Array, lang: string, options?: SpeechRecognitionOptions | undefined | null): Promise<string>
-export interface SpeechRecognitionCapabilities {
-  isAvailable: boolean
-  supportsOnDeviceRecognition: boolean
-  isAuthorized: boolean
-}
-/** Check whether the selected locale currently supports system speech recognition. */
-export declare function getSpeechRecognitionCapabilities(lang: string): SpeechRecognitionCapabilities
+/** Check whether this system can transcribe speech at all. Languages and models are not checked. */
+export declare function isTranscribeAudioSupport(): boolean
 /**
- * Check whether `recognizeSpeech` / `recognizeSpeechBuffer` can run for the locale and options.
- * Authorization is not checked; use `requestSpeechPermission` for that.
+ * Check whether the model for `lang` (for example "zh-CN" or "en-US") is ready.
+ * Never downloads anything or asks for permission.
  */
-export declare function isRecognizeSpeechSupport(lang: string, options?: SpeechRecognitionOptions | undefined | null): boolean
+export declare function getTranscribeAudioModelStatus(lang: string): Promise<'ready' | 'downloadRequired' | 'unsupported'>
+/** Download and install the model for `lang`. Resolves once it is installed. */
+export declare function downloadTranscribeAudioModel(lang: string): Promise<void>
+export interface TranscribeAudioOptions {
+  /** Give up after this many milliseconds. Defaults to 30 seconds plus the audio's length. */
+  timeoutMs?: number
+}
+/**
+ * Transcribe in-memory audio (mp3 / m4a / adts / wav, up to 10 minutes) on device.
+ * Resolves "" when the audio holds no speech.
+ */
+export declare function transcribeAudio(audio: Uint8Array, lang: string, options?: TranscribeAudioOptions | undefined | null): Promise<string>

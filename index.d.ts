@@ -1,4 +1,4 @@
-export type { SpeechRecognitionCapabilities, SpeechRecognitionOptions } from './binding'
+export type { TranscribeAudioOptions } from './binding'
 
 export declare enum TranslateErrorCode {
   UNSUPPORTED_PLATFORM = 'ERR_TRANSLATE_UNSUPPORTED_PLATFORM',
@@ -7,6 +7,20 @@ export declare enum TranslateErrorCode {
   LANGUAGE_PAIR_NOT_READY = 'ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY',
   FAILED = 'ERR_TRANSLATE_FAILED'
 }
+
+export declare enum TranscribeErrorCode {
+  UNSUPPORTED_PLATFORM = 'ERR_TRANSCRIBE_UNSUPPORTED_PLATFORM',
+  UNSUPPORTED_OS_VERSION = 'ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION',
+  UNSUPPORTED_LANGUAGE = 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE',
+  MODEL_NOT_INSTALLED = 'ERR_TRANSCRIBE_MODEL_NOT_INSTALLED',
+  MODEL_DOWNLOAD_FAILED = 'ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED',
+  AUDIO_DECODE_FAILED = 'ERR_TRANSCRIBE_AUDIO_DECODE_FAILED',
+  AUDIO_TOO_LONG = 'ERR_TRANSCRIBE_AUDIO_TOO_LONG',
+  TIMEOUT = 'ERR_TRANSCRIBE_TIMEOUT',
+  FAILED = 'ERR_TRANSCRIBE_FAILED'
+}
+
+export type TranscribeAudioModelStatus = 'ready' | 'downloadRequired' | 'unsupported'
 
 /**
  * Translate text with the system's installed language models.
@@ -20,36 +34,27 @@ export declare function translateText(text: string, targetLang: string): Promise
 /** Check whether the current platform supports headless local translation. */
 export declare function isTranslateTextSupport(): boolean
 /**
- * Request authorization to use speech recognition.
- * Returns "authorized" | "denied" | "restricted" | "notDetermined".
- * Rejects with `ERR_TRANSLATE_UNSUPPORTED_PLATFORM` when the native addon is unavailable.
+ * Check whether this system can transcribe speech on device at all (macOS 26+).
+ * Languages and models are not checked; use `getTranscribeAudioModelStatus` for those.
  */
-export declare function requestSpeechPermission(): Promise<string>
+export declare function isTranscribeAudioSupport(): boolean
 /**
- * Recognize speech from an audio file, optionally requiring the system's local model.
- * Rejects with `ERR_TRANSLATE_UNSUPPORTED_PLATFORM` when the native addon is unavailable.
+ * Check whether the model for `lang` (a full locale such as "zh-CN" or "en-US") is ready.
+ * Never downloads anything or asks for permission. Resolves "unsupported" when the native addon is unavailable.
  */
-export declare function recognizeSpeech(
-  filePath: string,
-  lang: string,
-  options?: import('./binding').SpeechRecognitionOptions | undefined | null
-): Promise<string>
+export declare function getTranscribeAudioModelStatus(lang: string): Promise<TranscribeAudioModelStatus>
 /**
- * Recognize speech from in-memory audio data (mp3 / m4a / adts / wav), optionally requiring the system's local model.
- * Rejects with `ERR_TRANSLATE_UNSUPPORTED_PLATFORM` when the native addon is unavailable.
+ * Download and install the model for `lang` (several hundred MB). Resolves once it is installed.
+ * Rejects with a `TranscribeErrorCode`.
  */
-export declare function recognizeSpeechBuffer(
+export declare function downloadTranscribeAudioModel(lang: string): Promise<void>
+/**
+ * Transcribe in-memory audio (mp3 / m4a / adts / wav, up to 10 minutes) on device.
+ * Resolves "" when the audio holds no speech. Rejects with a `TranscribeErrorCode`;
+ * `ERR_TRANSCRIBE_MODEL_NOT_INSTALLED` means `downloadTranscribeAudioModel` has to run first.
+ */
+export declare function transcribeAudio(
   audio: Uint8Array,
   lang: string,
-  options?: import('./binding').SpeechRecognitionOptions | undefined | null
+  options?: import('./binding').TranscribeAudioOptions | undefined | null
 ): Promise<string>
-/** Check whether the selected locale currently supports system speech recognition. */
-export declare function getSpeechRecognitionCapabilities(lang: string): import('./binding').SpeechRecognitionCapabilities
-/**
- * Check whether `recognizeSpeech` / `recognizeSpeechBuffer` can run for the locale and options.
- * Authorization is not checked; use `requestSpeechPermission` for that.
- */
-export declare function isRecognizeSpeechSupport(
-  lang: string,
-  options?: import('./binding').SpeechRecognitionOptions | undefined | null
-): boolean

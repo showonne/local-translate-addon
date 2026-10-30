@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 use napi::bindgen_prelude::*;
+use napi::JsObject;
 use napi_derive::napi;
 use std::ffi::{CStr, CString};
 
@@ -12,19 +13,15 @@ extern "C" {
     fn free_translate_result(ptr: *mut i8);
     fn is_translate_text_support_ffi() -> bool;
 
-    fn recognize_speech_with_options_ffi(
-        file_path: *const i8,
-        lang: *const i8,
-        on_device_only: bool,
-    ) -> *mut i8;
-    fn recognize_speech_buffer_ffi(
+    fn is_transcribe_audio_support_ffi() -> bool;
+    fn transcribe_audio_model_status_ffi(lang: *const i8) -> *mut i8;
+    fn download_transcribe_audio_model_ffi(lang: *const i8) -> *mut i8;
+    fn transcribe_audio_ffi(
         bytes: *const u8,
         len: usize,
         lang: *const i8,
-        on_device_only: bool,
+        timeout_ms: u32,
     ) -> *mut i8;
-    fn speech_recognition_capabilities_ffi(lang: *const i8) -> u32;
-    fn request_speech_permission_ffi() -> *mut i8;
     fn free_speech_result(ptr: *mut i8);
 }
 
@@ -34,13 +31,64 @@ fn cstring(s: &str) -> Result<CString> {
     CString::new(s).map_err(|e| Error::from_reason(e.to_string()))
 }
 
+const ERROR_PREFIX: &str = "__error__:";
+
+#[derive(Debug)]
+struct CodedFailure {
+    code: String,
+    message: String,
+}
+
+/// Splits a Swift result into its value or its "__error__:<code>:<message>" failure.
+/// Codes outside `known` become `fallback`.
+fn decode_coded_result(
+    result: String,
+    known: &[&str],
+    fallback: &str,
+) -> std::result::Result<String, CodedFailure> {
+    let Some(payload) = result.strip_prefix(ERROR_PREFIX) else {
+        return Ok(result);
+    };
+
+    let Some((code, message)) = payload.split_once(':') else {
+        return Err(CodedFailure {
+            code: fallback.to_string(),
+            message: payload.to_string(),
+        });
+    };
+
+    let code = if known.contains(&code) {
+        code
+    } else {
+        fallback
+    };
+
+    Err(CodedFailure {
+        code: code.to_string(),
+        message: message.to_string(),
+    })
+}
+
+/// A JS Error whose `code` property is the failure's code.
+fn coded_error(env: Env, failure: CodedFailure) -> Error {
+    let coded_error: napi::Error<String> = napi::Error::new(failure.code, failure.message);
+    let js_error = napi::JsError::from(coded_error).into_unknown(env);
+    Error::from(js_error)
+}
+
 // ── translateText ─────────────────────────────────────────────────────────────
 
-const TRANSLATE_ERROR_PREFIX: &str = "__error__:";
 const ERR_TRANSLATE_UNSUPPORTED_OS_VERSION: &str = "ERR_TRANSLATE_UNSUPPORTED_OS_VERSION";
 const ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED: &str = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED";
 const ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY: &str = "ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY";
 const ERR_TRANSLATE_FAILED: &str = "ERR_TRANSLATE_FAILED";
+
+const TRANSLATE_ERROR_CODES: &[&str] = &[
+    ERR_TRANSLATE_UNSUPPORTED_OS_VERSION,
+    ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED,
+    ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY,
+    ERR_TRANSLATE_FAILED,
+];
 
 #[allow(non_camel_case_types)]
 #[napi(string_enum)]
@@ -55,36 +103,8 @@ pub enum TranslateErrorCode {
     FAILED,
 }
 
-#[derive(Debug)]
-struct TranslateFailure {
-    code: String,
-    message: String,
-}
-
-fn decode_translate_result(result: String) -> std::result::Result<String, TranslateFailure> {
-    let Some(payload) = result.strip_prefix(TRANSLATE_ERROR_PREFIX) else {
-        return Ok(result);
-    };
-
-    let Some((code, message)) = payload.split_once(':') else {
-        return Err(TranslateFailure {
-            code: ERR_TRANSLATE_FAILED.to_string(),
-            message: payload.to_string(),
-        });
-    };
-
-    let code = match code {
-        ERR_TRANSLATE_UNSUPPORTED_OS_VERSION => ERR_TRANSLATE_UNSUPPORTED_OS_VERSION,
-        ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED => ERR_TRANSLATE_LANGUAGE_PAIR_NOT_INSTALLED,
-        ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY => ERR_TRANSLATE_LANGUAGE_PAIR_NOT_READY,
-        ERR_TRANSLATE_FAILED => ERR_TRANSLATE_FAILED,
-        _ => ERR_TRANSLATE_FAILED,
-    };
-
-    Err(TranslateFailure {
-        code: code.to_string(),
-        message: message.to_string(),
-    })
+fn decode_translate_result(result: String) -> std::result::Result<String, CodedFailure> {
+    decode_coded_result(result, TRANSLATE_ERROR_CODES, ERR_TRANSLATE_FAILED)
 }
 
 pub struct TranslateTask {
@@ -126,9 +146,13 @@ impl Task for TranslateTask {
             .failure_code
             .take()
             .unwrap_or_else(|| ERR_TRANSLATE_FAILED.to_string());
-        let coded_error: napi::Error<String> = napi::Error::new(code, err.reason);
-        let js_error = napi::JsError::from(coded_error).into_unknown(env);
-        Err(Error::from(js_error))
+        Err(coded_error(
+            env,
+            CodedFailure {
+                code,
+                message: err.reason,
+            },
+        ))
     }
 }
 
@@ -153,189 +177,144 @@ pub fn is_translate_text_support() -> bool {
     unsafe { is_translate_text_support_ffi() }
 }
 
-// ── requestSpeechPermission ───────────────────────────────────────────────────
+// ── Speech transcription ──────────────────────────────────────────────────────
 
-pub struct RequestSpeechPermissionTask;
+const ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION: &str = "ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION";
+const ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE: &str = "ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE";
+const ERR_TRANSCRIBE_MODEL_NOT_INSTALLED: &str = "ERR_TRANSCRIBE_MODEL_NOT_INSTALLED";
+const ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED: &str = "ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED";
+const ERR_TRANSCRIBE_AUDIO_DECODE_FAILED: &str = "ERR_TRANSCRIBE_AUDIO_DECODE_FAILED";
+const ERR_TRANSCRIBE_AUDIO_TOO_LONG: &str = "ERR_TRANSCRIBE_AUDIO_TOO_LONG";
+const ERR_TRANSCRIBE_TIMEOUT: &str = "ERR_TRANSCRIBE_TIMEOUT";
+const ERR_TRANSCRIBE_FAILED: &str = "ERR_TRANSCRIBE_FAILED";
 
-impl Task for RequestSpeechPermissionTask {
-    type Output = String;
-    type JsValue = String;
+const TRANSCRIBE_ERROR_CODES: &[&str] = &[
+    ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION,
+    ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE,
+    ERR_TRANSCRIBE_MODEL_NOT_INSTALLED,
+    ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED,
+    ERR_TRANSCRIBE_AUDIO_DECODE_FAILED,
+    ERR_TRANSCRIBE_AUDIO_TOO_LONG,
+    ERR_TRANSCRIBE_TIMEOUT,
+    ERR_TRANSCRIBE_FAILED,
+];
 
-    fn compute(&mut self) -> Result<Self::Output> {
-        let ptr = unsafe { request_speech_permission_ffi() };
-        if ptr.is_null() {
-            return Err(Error::from_reason("request_speech_permission_ffi returned null"));
-        }
-        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
-        unsafe { free_speech_result(ptr) };
-        Ok(result)
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
-    }
+#[allow(non_camel_case_types)]
+#[napi(string_enum)]
+pub enum TranscribeErrorCode {
+    #[napi(value = "ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION")]
+    UNSUPPORTED_OS_VERSION,
+    #[napi(value = "ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE")]
+    UNSUPPORTED_LANGUAGE,
+    #[napi(value = "ERR_TRANSCRIBE_MODEL_NOT_INSTALLED")]
+    MODEL_NOT_INSTALLED,
+    #[napi(value = "ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED")]
+    MODEL_DOWNLOAD_FAILED,
+    #[napi(value = "ERR_TRANSCRIBE_AUDIO_DECODE_FAILED")]
+    AUDIO_DECODE_FAILED,
+    #[napi(value = "ERR_TRANSCRIBE_AUDIO_TOO_LONG")]
+    AUDIO_TOO_LONG,
+    #[napi(value = "ERR_TRANSCRIBE_TIMEOUT")]
+    TIMEOUT,
+    #[napi(value = "ERR_TRANSCRIBE_FAILED")]
+    FAILED,
 }
 
-/// Request authorization to use speech recognition.
-/// Returns "authorized" | "denied" | "restricted" | "notDetermined".
-#[napi(ts_return_type = "Promise<string>")]
-pub fn request_speech_permission() -> AsyncTask<RequestSpeechPermissionTask> {
-    AsyncTask::new(RequestSpeechPermissionTask)
+/// Copies and frees a C string returned by the speech bridge.
+///
+/// # Safety
+///
+/// `ptr` must be null or a string the speech bridge allocated.
+unsafe fn take_speech_result(ptr: *mut i8) -> String {
+    if ptr.is_null() {
+        return format!("{ERROR_PREFIX}{ERR_TRANSCRIBE_FAILED}:speech bridge returned null");
+    }
+    let result = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+    free_speech_result(ptr);
+    result
 }
 
-// ── recognizeSpeech ───────────────────────────────────────────────────────────
-
-pub struct RecognizeSpeechTask {
-    file_path: String,
-    lang: String,
-    on_device_only: bool,
+/// Runs `work` on a thread of its own and settles the returned promise with its result.
+/// The speech bridge blocks until the system answers, which for a model download takes
+/// minutes, so it must not hold one of libuv's few pool threads.
+fn spawn_speech_work<T, F>(env: Env, work: F, into_value: fn(String) -> T) -> Result<JsObject>
+where
+    T: ToNapiValue + Send + 'static,
+    F: FnOnce() -> String + Send + 'static,
+{
+    let (deferred, promise) = env.create_deferred()?;
+    std::thread::Builder::new()
+        .name("local-transcribe".to_string())
+        .spawn(move || {
+            let result = decode_coded_result(work(), TRANSCRIBE_ERROR_CODES, ERR_TRANSCRIBE_FAILED);
+            deferred.resolve(move |env| match result {
+                Ok(value) => Ok(into_value(value)),
+                Err(failure) => Err(coded_error(env, failure)),
+            });
+        })
+        .map_err(|e| Error::from_reason(e.to_string()))?;
+    Ok(promise)
 }
 
-impl Task for RecognizeSpeechTask {
-    type Output = String;
-    type JsValue = String;
+/// Check whether this system can transcribe speech at all. Languages and models are not checked.
+#[napi]
+pub fn is_transcribe_audio_support() -> bool {
+    unsafe { is_transcribe_audio_support_ffi() }
+}
 
-    fn compute(&mut self) -> Result<Self::Output> {
-        let c_path = cstring(&self.file_path)?;
-        let c_lang = cstring(&self.lang)?;
+/// Check whether the model for `lang` (for example "zh-CN" or "en-US") is ready.
+/// Never downloads anything or asks for permission.
+#[napi(ts_return_type = "Promise<'ready' | 'downloadRequired' | 'unsupported'>")]
+pub fn get_transcribe_audio_model_status(env: Env, lang: String) -> Result<JsObject> {
+    let c_lang = cstring(&lang)?;
+    spawn_speech_work(
+        env,
+        move || unsafe { take_speech_result(transcribe_audio_model_status_ffi(c_lang.as_ptr())) },
+        |status| status,
+    )
+}
 
-        let ptr = unsafe {
-            recognize_speech_with_options_ffi(
-                c_path.as_ptr(),
-                c_lang.as_ptr(),
-                self.on_device_only,
-            )
-        };
-        if ptr.is_null() {
-            return Err(Error::from_reason("recognize_speech_with_options_ffi returned null"));
-        }
-        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
-        unsafe { free_speech_result(ptr) };
-
-        if let Some(msg) = result.strip_prefix("__error__:") {
-            Err(Error::from_reason(msg.to_string()))
-        } else {
-            Ok(result)
-        }
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
-    }
+/// Download and install the model for `lang`. Resolves once it is installed.
+#[napi(ts_return_type = "Promise<void>")]
+pub fn download_transcribe_audio_model(env: Env, lang: String) -> Result<JsObject> {
+    let c_lang = cstring(&lang)?;
+    spawn_speech_work(
+        env,
+        move || unsafe { take_speech_result(download_transcribe_audio_model_ffi(c_lang.as_ptr())) },
+        |_| (),
+    )
 }
 
 #[napi(object)]
-pub struct SpeechRecognitionOptions {
-    pub on_device_only: Option<bool>,
+pub struct TranscribeAudioOptions {
+    /// Give up after this many milliseconds. Defaults to 30 seconds plus the audio's length.
+    pub timeout_ms: Option<u32>,
 }
 
-/// Recognize speech from an audio file, optionally requiring the system's local model.
+/// Transcribe in-memory audio (mp3 / m4a / adts / wav, up to 10 minutes) on device.
+/// Resolves "" when the audio holds no speech.
 #[napi(ts_return_type = "Promise<string>")]
-pub fn recognize_speech(
-    file_path: String,
-    lang: String,
-    options: Option<SpeechRecognitionOptions>,
-) -> AsyncTask<RecognizeSpeechTask> {
-    AsyncTask::new(RecognizeSpeechTask {
-        file_path,
-        lang,
-        on_device_only: options.and_then(|options| options.on_device_only).unwrap_or(false),
-    })
-}
-
-pub struct RecognizeSpeechBufferTask {
-    audio: Vec<u8>,
-    lang: String,
-    on_device_only: bool,
-}
-
-impl Task for RecognizeSpeechBufferTask {
-    type Output = String;
-    type JsValue = String;
-
-    fn compute(&mut self) -> Result<Self::Output> {
-        let c_lang = cstring(&self.lang)?;
-
-        let ptr = unsafe {
-            recognize_speech_buffer_ffi(
-                self.audio.as_ptr(),
-                self.audio.len(),
-                c_lang.as_ptr(),
-                self.on_device_only,
-            )
-        };
-        if ptr.is_null() {
-            return Err(Error::from_reason("recognize_speech_buffer_ffi returned null"));
-        }
-        let result = unsafe { CStr::from_ptr(ptr).to_string_lossy().into_owned() };
-        unsafe { free_speech_result(ptr) };
-
-        if let Some(msg) = result.strip_prefix("__error__:") {
-            Err(Error::from_reason(msg.to_string()))
-        } else {
-            Ok(result)
-        }
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
-    }
-}
-
-/// Recognize speech from in-memory audio data (mp3 / m4a / adts / wav).
-#[napi(ts_return_type = "Promise<string>")]
-pub fn recognize_speech_buffer(
+pub fn transcribe_audio(
+    env: Env,
     audio: Uint8Array,
     lang: String,
-    options: Option<SpeechRecognitionOptions>,
-) -> AsyncTask<RecognizeSpeechBufferTask> {
-    AsyncTask::new(RecognizeSpeechBufferTask {
-        audio: audio.to_vec(),
-        lang,
-        on_device_only: options.and_then(|options| options.on_device_only).unwrap_or(false),
-    })
-}
-
-#[napi(object)]
-pub struct SpeechRecognitionCapabilities {
-    pub is_available: bool,
-    pub supports_on_device_recognition: bool,
-    pub is_authorized: bool,
-}
-
-impl SpeechRecognitionCapabilities {
-    fn from_bits(bits: u32) -> Self {
-        Self {
-            is_available: bits & 1 != 0,
-            supports_on_device_recognition: bits & (1 << 1) != 0,
-            is_authorized: bits & (1 << 2) != 0,
-        }
-    }
-
-    fn supports(&self, on_device_only: bool) -> bool {
-        self.is_available && (!on_device_only || self.supports_on_device_recognition)
-    }
-}
-
-/// Check whether the selected locale currently supports system speech recognition.
-#[napi]
-pub fn get_speech_recognition_capabilities(
-    lang: String,
-) -> Result<SpeechRecognitionCapabilities> {
+    options: Option<TranscribeAudioOptions>,
+) -> Result<JsObject> {
+    let audio = audio.to_vec();
     let c_lang = cstring(&lang)?;
-    let bits = unsafe { speech_recognition_capabilities_ffi(c_lang.as_ptr()) };
-    Ok(SpeechRecognitionCapabilities::from_bits(bits))
-}
-
-/// Check whether `recognizeSpeech` / `recognizeSpeechBuffer` can run for the locale and options.
-/// Authorization is not checked; use `requestSpeechPermission` for that.
-#[napi]
-pub fn is_recognize_speech_support(
-    lang: String,
-    options: Option<SpeechRecognitionOptions>,
-) -> Result<bool> {
-    let on_device_only = options.and_then(|options| options.on_device_only).unwrap_or(false);
-    Ok(get_speech_recognition_capabilities(lang)?.supports(on_device_only))
+    let timeout_ms = options.and_then(|options| options.timeout_ms).unwrap_or(0);
+    spawn_speech_work(
+        env,
+        move || unsafe {
+            take_speech_result(transcribe_audio_ffi(
+                audio.as_ptr(),
+                audio.len(),
+                c_lang.as_ptr(),
+                timeout_ms,
+            ))
+        },
+        |text| text,
+    )
 }
 
 #[cfg(test)]
@@ -390,15 +369,48 @@ mod tests {
     }
 
     #[test]
-    fn speech_support_requires_availability() {
-        assert!(!SpeechRecognitionCapabilities::from_bits(0b110).supports(false));
-        assert!(SpeechRecognitionCapabilities::from_bits(0b001).supports(false));
+    fn decodes_transcribe_error() {
+        let failure = decode_coded_result(
+            "__error__:ERR_TRANSCRIBE_MODEL_NOT_INSTALLED:Model for zh_CN is not installed"
+                .to_string(),
+            TRANSCRIBE_ERROR_CODES,
+            ERR_TRANSCRIBE_FAILED,
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSCRIBE_MODEL_NOT_INSTALLED");
+        assert_eq!(failure.message, "Model for zh_CN is not installed");
     }
 
     #[test]
-    fn on_device_speech_support_requires_local_model() {
-        assert!(!SpeechRecognitionCapabilities::from_bits(0b001).supports(true));
-        assert!(SpeechRecognitionCapabilities::from_bits(0b011).supports(true));
+    fn unknown_transcribe_error_falls_back_to_generic_code() {
+        let failure = decode_coded_result(
+            "__error__:ERR_TRANSLATE_FAILED:wrong family".to_string(),
+            TRANSCRIBE_ERROR_CODES,
+            ERR_TRANSCRIBE_FAILED,
+        )
+        .unwrap_err();
+
+        assert_eq!(failure.code, "ERR_TRANSCRIBE_FAILED");
+    }
+
+    #[test]
+    fn transcript_passes_through() {
+        assert_eq!(
+            decode_coded_result(
+                "你好。".to_string(),
+                TRANSCRIBE_ERROR_CODES,
+                ERR_TRANSCRIBE_FAILED
+            )
+            .unwrap(),
+            "你好。"
+        );
+    }
+
+    #[test]
+    fn exposes_swift_transcribe_audio_support() {
+        let ffi_result = unsafe { is_transcribe_audio_support_ffi() };
+        assert_eq!(is_transcribe_audio_support(), ffi_result);
     }
 
     #[test]

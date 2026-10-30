@@ -6,9 +6,21 @@ const TranslateErrorCode = Object.freeze({
   FAILED: 'ERR_TRANSLATE_FAILED',
 });
 
-function unsupportedPlatformError(cause) {
-  const error = new Error('Local translate is not available on this platform');
-  error.code = TranslateErrorCode.UNSUPPORTED_PLATFORM;
+const TranscribeErrorCode = Object.freeze({
+  UNSUPPORTED_PLATFORM: 'ERR_TRANSCRIBE_UNSUPPORTED_PLATFORM',
+  UNSUPPORTED_OS_VERSION: 'ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION',
+  UNSUPPORTED_LANGUAGE: 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE',
+  MODEL_NOT_INSTALLED: 'ERR_TRANSCRIBE_MODEL_NOT_INSTALLED',
+  MODEL_DOWNLOAD_FAILED: 'ERR_TRANSCRIBE_MODEL_DOWNLOAD_FAILED',
+  AUDIO_DECODE_FAILED: 'ERR_TRANSCRIBE_AUDIO_DECODE_FAILED',
+  AUDIO_TOO_LONG: 'ERR_TRANSCRIBE_AUDIO_TOO_LONG',
+  TIMEOUT: 'ERR_TRANSCRIBE_TIMEOUT',
+  FAILED: 'ERR_TRANSCRIBE_FAILED',
+});
+
+function unsupportedPlatformError(message, code, cause) {
+  const error = new Error(message);
+  error.code = code;
   if (cause !== undefined) {
     error.cause = cause;
   }
@@ -27,34 +39,41 @@ function createLocalTranslate(loadBinding) {
   if (binding) {
     return {
       TranslateErrorCode,
+      TranscribeErrorCode,
       translateText: binding.translateText,
       isTranslateTextSupport: binding.isTranslateTextSupport,
-      requestSpeechPermission: binding.requestSpeechPermission,
-      recognizeSpeech: binding.recognizeSpeech,
-      recognizeSpeechBuffer: binding.recognizeSpeechBuffer,
-      getSpeechRecognitionCapabilities: binding.getSpeechRecognitionCapabilities,
-      isRecognizeSpeechSupport: binding.isRecognizeSpeechSupport,
+      isTranscribeAudioSupport: binding.isTranscribeAudioSupport,
+      getTranscribeAudioModelStatus: binding.getTranscribeAudioModelStatus,
+      downloadTranscribeAudioModel: binding.downloadTranscribeAudioModel,
+      transcribeAudio: binding.transcribeAudio,
     };
   }
 
-  const reject = async () => {
-    throw unsupportedPlatformError(loadError);
+  const rejectTranslate = async () => {
+    throw unsupportedPlatformError(
+      'Local translate is not available on this platform',
+      TranslateErrorCode.UNSUPPORTED_PLATFORM,
+      loadError
+    );
+  };
+  const rejectTranscribe = async () => {
+    throw unsupportedPlatformError(
+      'Local speech transcription is not available on this platform',
+      TranscribeErrorCode.UNSUPPORTED_PLATFORM,
+      loadError
+    );
   };
 
   return {
     TranslateErrorCode,
-    translateText: reject,
+    TranscribeErrorCode,
+    translateText: rejectTranslate,
     isTranslateTextSupport: () => false,
-    requestSpeechPermission: reject,
-    recognizeSpeech: reject,
-    recognizeSpeechBuffer: reject,
-    getSpeechRecognitionCapabilities: () => ({
-      isAvailable: false,
-      supportsOnDeviceRecognition: false,
-      isAuthorized: false,
-    }),
-    isRecognizeSpeechSupport: () => false,
+    isTranscribeAudioSupport: () => false,
+    getTranscribeAudioModelStatus: async () => 'unsupported',
+    downloadTranscribeAudioModel: rejectTranscribe,
+    transcribeAudio: rejectTranscribe,
   };
 }
 
-module.exports = { createLocalTranslate, TranslateErrorCode };
+module.exports = { createLocalTranslate, TranslateErrorCode, TranscribeErrorCode };

@@ -2,22 +2,22 @@ const { createLocalTranslate } = require('./entry');
 
 const {
   TranslateErrorCode,
+  TranscribeErrorCode,
   translateText,
   isTranslateTextSupport,
-  requestSpeechPermission,
-  recognizeSpeech,
-  recognizeSpeechBuffer,
-  getSpeechRecognitionCapabilities,
-  isRecognizeSpeechSupport,
+  isTranscribeAudioSupport,
+  getTranscribeAudioModelStatus,
+  downloadTranscribeAudioModel,
+  transcribeAudio,
 } = createLocalTranslate(() => require('./binding'));
 
 module.exports = {
   TranslateErrorCode,
+  TranscribeErrorCode,
   translateText,
   isTranslateTextSupport,
-  requestSpeechPermission,
-  recognizeSpeech,
-  recognizeSpeechBuffer,
-  getSpeechRecognitionCapabilities,
-  isRecognizeSpeechSupport,
+  isTranscribeAudioSupport,
+  getTranscribeAudioModelStatus,
+  downloadTranscribeAudioModel,
+  transcribeAudio,
 };
