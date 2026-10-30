@@ -34,8 +34,9 @@ export declare function translateText(text: string, targetLang: string): Promise
 /** Check whether the current platform supports headless local translation. */
 export declare function isTranslateTextSupport(): boolean
 /**
- * Check whether this system can transcribe speech on device at all (macOS 26+).
+ * Check whether this system can transcribe speech on device at all (macOS 26+ with SpeechTranscriber available).
  * Languages and models are not checked; use `getTranscribeAudioModelStatus` for those.
+ * When false, downloads and transcriptions reject with `ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION`.
  */
 export declare function isTranscribeAudioSupport(): boolean
 /**

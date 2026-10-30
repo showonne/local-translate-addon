@@ -40,14 +40,15 @@ protocol TranscriptionEngine: Sendable {
     func transcribe(audio: Data, lang: String, timeout: Duration?) async throws -> String
 }
 
-/// The engine behind the public API, or nil when this macOS has none the host can use.
+/// The engine behind the public API, or nil when this system has none the host can use: before macOS 26, or
+/// when SpeechTranscriber is unavailable there (as on GitHub's macOS 26 runners).
 ///
 /// macOS 26+ always uses SpeechAnalyzer, and never falls back to SFSpeechRecognizer, even when SpeechAnalyzer fails:
 /// SFSpeechRecognizer needs NSSpeechRecognitionUsageDescription in the host app's Info.plist and the user's
 /// permission, and without the usage description the system kills the process (exit code 134). Loaded in
 /// Electron's main process, that is the whole app. SpeechAnalyzer needs neither.
 private func currentEngine() -> TranscriptionEngine? {
-    if #available(macOS 26, *) {
+    if #available(macOS 26, *), SpeechTranscriber.isAvailable {
         return AnalyzerEngine()
     }
     return nil
@@ -63,10 +64,7 @@ private func defaultTranscribeTimeout(audioSeconds: Double) -> Duration {
 
 @_cdecl("is_transcribe_audio_support_ffi")
 public func isTranscribeAudioSupportFfi() -> Bool {
-    if #available(macOS 26, *) {
-        return SpeechTranscriber.isAvailable
-    }
-    return false
+    currentEngine() != nil
 }
 
 /// Returns "ready" | "downloadRequired" | "unsupported".
@@ -116,7 +114,10 @@ public func freeSpeechResult(_ ptr: UnsafeMutablePointer<CChar>?) {
 
 private func requireEngine() throws -> TranscriptionEngine {
     guard let engine = currentEngine() else {
-        throw TranscribeFailure(code: .unsupportedOSVersion, message: "Speech transcription requires macOS 26+")
+        throw TranscribeFailure(
+            code: .unsupportedOSVersion,
+            message: "Speech transcription is not available on this system (requires macOS 26+)"
+        )
     }
     return engine
 }
