@@ -39,6 +39,11 @@ export declare function isTranscribeAudioSupport(): boolean
 export declare function getTranscribeAudioModelStatus(lang: string): Promise<'ready' | 'downloadRequired' | 'unsupported'>
 /** Download and install the model for `lang`. Resolves once it is installed. */
 export declare function downloadTranscribeAudioModel(lang: string): Promise<void>
+/**
+ * Give up this app's reservation of the model for `lang`. Resolves false when the app held none.
+ * Once no app reserves it, macOS soon reports it as not installed and deletes it when reclaiming space.
+ */
+export declare function releaseTranscribeAudioModel(lang: string): Promise<boolean>
 export interface TranscribeAudioOptions {
   /** Give up after this many milliseconds. Defaults to 30 seconds plus the audio's length. */
   timeoutMs?: number

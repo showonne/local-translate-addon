@@ -51,6 +51,17 @@ function silentWav(seconds) {
   return new Uint8Array(wav);
 }
 
+function synthesizedSpeech(text) {
+  const dir = mkdtempSync(join(tmpdir(), 'local-transcribe-'));
+  try {
+    const file = join(dir, 'speech.m4a');
+    execFileSync('/usr/bin/say', ['-o', file, '--data-format=aac', text]);
+    return new Uint8Array(readFileSync(file));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 test('addon loads without error', () => {
   const addon = require(addonPath);
   assert.ok(addon, 'addon should be truthy');
@@ -78,6 +89,7 @@ test('speech transcription exports one engine-agnostic API', () => {
   assert.equal(typeof addon.isTranscribeAudioSupport, 'function');
   assert.equal(typeof addon.getTranscribeAudioModelStatus, 'function');
   assert.equal(typeof addon.downloadTranscribeAudioModel, 'function');
+  assert.equal(typeof addon.releaseTranscribeAudioModel, 'function');
   assert.equal(typeof addon.transcribeAudio, 'function');
   for (const removed of [
     'requestSpeechPermission',
@@ -160,20 +172,42 @@ test('transcribeAudio transcribes synthesized speech', async t => {
     return;
   }
 
-  const dir = mkdtempSync(join(tmpdir(), 'local-transcribe-'));
-  try {
-    const file = join(dir, 'fox.m4a');
-    execFileSync('/usr/bin/say', [
-      '-o',
-      file,
-      '--data-format=aac',
-      'The quick brown fox jumps over the lazy dog.',
-    ]);
-    const text = await addon.transcribeAudio(new Uint8Array(readFileSync(file)), 'en-US');
-    assert.match(text.toLowerCase(), /quick brown fox/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  const audio = synthesizedSpeech('The quick brown fox jumps over the lazy dog.');
+  const text = await addon.transcribeAudio(audio, 'en-US');
+  assert.match(text.toLowerCase(), /quick brown fox/);
+});
+
+test('releaseTranscribeAudioModel rejects with a transcribe error code', async () => {
+  const addon = require(addonPath);
+  const expected = addon.isTranscribeAudioSupport()
+    ? 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE'
+    : 'ERR_TRANSCRIBE_UNSUPPORTED_OS_VERSION';
+  await assert.rejects(addon.releaseTranscribeAudioModel('xx-INVALID'), error => {
+    assert.equal(error.code, expected);
+    return true;
+  });
+});
+
+test('releaseTranscribeAudioModel gives up the reservation transcribeAudio takes', async t => {
+  const addon = require(addonPath);
+  if (
+    !addon.isTranscribeAudioSupport() ||
+    (await addon.getTranscribeAudioModelStatus('en-US')) !== 'ready'
+  ) {
+    t.skip('the en-US model is not installed here');
+    return;
   }
+
+  const audio = synthesizedSpeech('Release the model and reserve it again.');
+  await addon.transcribeAudio(audio, 'en-US');
+  assert.equal(await addon.releaseTranscribeAudioModel('en-US'), true);
+  assert.equal(await addon.releaseTranscribeAudioModel('en-US'), false);
+  // Right after a release macOS still lists the model as installed, so transcribing reserves it again.
+  assert.equal(await addon.getTranscribeAudioModelStatus('en-US'), 'ready');
+  assert.match((await addon.transcribeAudio(audio, 'en-US')).toLowerCase(), /reserve/);
+  assert.equal(await addon.releaseTranscribeAudioModel('en-US'), true);
+  // Leaves the model reserved, as other test runs expect.
+  await addon.transcribeAudio(audio, 'en-US');
 });
 
 test('entry error codes cover every native error code', () => {
@@ -196,6 +230,7 @@ test('package entry exposes exactly the public API', () => {
     'getTranscribeAudioModelStatus',
     'isTranscribeAudioSupport',
     'isTranslateTextSupport',
+    'releaseTranscribeAudioModel',
     'transcribeAudio',
     'translateText',
   ]);
@@ -217,6 +252,7 @@ test('entry falls back when the native binding cannot load', async () => {
   });
   for (const pending of [
     api.downloadTranscribeAudioModel('zh-CN'),
+    api.releaseTranscribeAudioModel('zh-CN'),
     api.transcribeAudio(new Uint8Array(), 'zh-CN'),
   ]) {
     await assert.rejects(pending, error => {

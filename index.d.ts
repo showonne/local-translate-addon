@@ -45,10 +45,20 @@ export declare function isTranscribeAudioSupport(): boolean
  */
 export declare function getTranscribeAudioModelStatus(lang: string): Promise<TranscribeAudioModelStatus>
 /**
- * Download and install the model for `lang` (several hundred MB). Resolves once it is installed.
+ * Download and install the model for `lang` (about 150 MB per language). Resolves once it is installed.
  * Rejects with a `TranscribeErrorCode`.
  */
 export declare function downloadTranscribeAudioModel(lang: string): Promise<void>
+/**
+ * Give up this app's reservation of the model for `lang`, which tells macOS the app no longer needs it.
+ * Resolves true when the app held a reservation, false when it held none.
+ *
+ * While another app still reserves the locale nothing changes. Once none does, macOS stops listing the model as
+ * installed within minutes, so the status turns "downloadRequired", and deletes the files whenever it next reclaims
+ * disk space; downloading it again before then takes seconds. `transcribeAudio` reserves an installed model again.
+ * Rejects with a `TranscribeErrorCode`.
+ */
+export declare function releaseTranscribeAudioModel(lang: string): Promise<boolean>
 /**
  * Transcribe in-memory audio (mp3 / m4a / adts / wav, up to 10 minutes) on device.
  * Resolves "" when the audio holds no speech. Rejects with a `TranscribeErrorCode`;

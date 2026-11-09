@@ -8,6 +8,7 @@ const {
   isTranscribeAudioSupport,
   getTranscribeAudioModelStatus,
   downloadTranscribeAudioModel,
+  releaseTranscribeAudioModel,
   transcribeAudio,
 } = createLocalTranslate(() => require('./binding'));
 
@@ -19,5 +20,6 @@ module.exports = {
   isTranscribeAudioSupport,
   getTranscribeAudioModelStatus,
   downloadTranscribeAudioModel,
+  releaseTranscribeAudioModel,
   transcribeAudio,
 };

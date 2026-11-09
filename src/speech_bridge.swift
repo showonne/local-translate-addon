@@ -36,6 +36,8 @@ protocol TranscriptionEngine: Sendable {
     /// Never downloads anything or asks for permission.
     func modelStatus(lang: String) async throws -> TranscriptionModelStatus
     func downloadModel(lang: String) async throws
+    /// Gives up this app's reservation. Returns false when the app held none.
+    func releaseModel(lang: String) async throws -> Bool
     /// `timeout` nil means the default for the audio's length.
     func transcribe(audio: Data, lang: String, timeout: Duration?) async throws -> String
 }
@@ -88,6 +90,18 @@ public func downloadTranscribeAudioModelFfi(_ langPtr: UnsafePointer<CChar>) -> 
     return blockingResult {
         try await requireEngine().downloadModel(lang: lang)
         return ""
+    }
+}
+
+/// Returns "true" once this app's reservation is released, "false" when it held none.
+@_cdecl("release_transcribe_audio_model_ffi")
+public func releaseTranscribeAudioModelFfi(_ langPtr: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
+    let lang = String(cString: langPtr)
+    return blockingResult {
+        let engine = try requireEngine()
+        return try await withTimeout(statusTimeout) {
+            String(try await engine.releaseModel(lang: lang))
+        }
     }
 }
 
@@ -458,6 +472,12 @@ private struct AnalyzerEngine: TranscriptionEngine {
         }
     }
 
+    /// Nothing changes while another app still reserves the locale. Once none does, the system stops listing it in
+    /// `installedLocales` within minutes and marks the files purgeable; they go when it next reclaims disk space.
+    func releaseModel(lang: String) async throws -> Bool {
+        await AssetInventory.release(reservedLocale: try await resolveLocale(lang))
+    }
+
     func transcribe(audio: Data, lang: String, timeout: Duration?) async throws -> String {
         let locale = try await resolveLocale(lang)
         let transcriber = makeTranscriber(locale)
@@ -572,6 +592,10 @@ private struct SFSpeechEngine: TranscriptionEngine {
 
     func downloadModel(lang: String) async throws {
         throw TranscribeFailure(code: .unsupportedLanguage, message: "The system manages SFSpeechRecognizer models")
+    }
+
+    func releaseModel(lang: String) async throws -> Bool {
+        false
     }
 
     func transcribe(audio: Data, lang: String, timeout: Duration?) async throws -> String {

@@ -45,6 +45,7 @@ function createLocalTranslate(loadBinding) {
       isTranscribeAudioSupport: binding.isTranscribeAudioSupport,
       getTranscribeAudioModelStatus: binding.getTranscribeAudioModelStatus,
       downloadTranscribeAudioModel: binding.downloadTranscribeAudioModel,
+      releaseTranscribeAudioModel: binding.releaseTranscribeAudioModel,
       transcribeAudio: binding.transcribeAudio,
     };
   }
@@ -72,6 +73,7 @@ function createLocalTranslate(loadBinding) {
     isTranscribeAudioSupport: () => false,
     getTranscribeAudioModelStatus: async () => 'unsupported',
     downloadTranscribeAudioModel: rejectTranscribe,
+    releaseTranscribeAudioModel: rejectTranscribe,
     transcribeAudio: rejectTranscribe,
   };
 }

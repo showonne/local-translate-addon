@@ -16,6 +16,7 @@ extern "C" {
     fn is_transcribe_audio_support_ffi() -> bool;
     fn transcribe_audio_model_status_ffi(lang: *const i8) -> *mut i8;
     fn download_transcribe_audio_model_ffi(lang: *const i8) -> *mut i8;
+    fn release_transcribe_audio_model_ffi(lang: *const i8) -> *mut i8;
     fn transcribe_audio_ffi(
         bytes: *const u8,
         len: usize,
@@ -282,6 +283,18 @@ pub fn download_transcribe_audio_model(env: Env, lang: String) -> Result<JsObjec
         env,
         move || unsafe { take_speech_result(download_transcribe_audio_model_ffi(c_lang.as_ptr())) },
         |_| (),
+    )
+}
+
+/// Give up this app's reservation of the model for `lang`. Resolves false when the app held none.
+/// Once no app reserves it, macOS soon reports it as not installed and deletes it when reclaiming space.
+#[napi(ts_return_type = "Promise<boolean>")]
+pub fn release_transcribe_audio_model(env: Env, lang: String) -> Result<JsObject> {
+    let c_lang = cstring(&lang)?;
+    spawn_speech_work(
+        env,
+        move || unsafe { take_speech_result(release_transcribe_audio_model_ffi(c_lang.as_ptr())) },
+        |released| released == "true",
     )
 }
 
