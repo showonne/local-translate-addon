@@ -51,6 +51,16 @@ function silentWav(seconds) {
   return new Uint8Array(wav);
 }
 
+// A language whose model this Mac has, or null.
+async function readyLanguage(addon) {
+  for (const lang of ['zh-CN', 'en-US']) {
+    if ((await addon.getTranscribeAudioModelStatus(lang)) === 'ready') {
+      return lang;
+    }
+  }
+  return null;
+}
+
 function synthesizedSpeech(text) {
   const dir = mkdtempSync(join(tmpdir(), 'local-transcribe-'));
   try {
@@ -142,24 +152,54 @@ test('transcribeAudio rejects with a transcribe error code', async t => {
     return;
   }
 
-  await assert.rejects(addon.transcribeAudio(new Uint8Array([1, 2, 3, 4]), 'zh-CN'), error => {
+  await assert.rejects(addon.transcribeAudio(silentWav(1), 'xx-INVALID'), error => {
+    assert.equal(error.code, 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE');
+    return true;
+  });
+  const lang = await readyLanguage(addon);
+  if (!lang) {
+    t.skip('no zh-CN or en-US model is installed here');
+    return;
+  }
+  await assert.rejects(addon.transcribeAudio(new Uint8Array([1, 2, 3, 4]), lang), error => {
     assert.equal(error.code, 'ERR_TRANSCRIBE_AUDIO_DECODE_FAILED');
     return true;
   });
-  await assert.rejects(addon.transcribeAudio(silentWav(1), 'xx-INVALID'), error => {
-    assert.equal(error.code, 'ERR_TRANSCRIBE_UNSUPPORTED_LANGUAGE');
+});
+
+test('transcribeAudio asks for the model when this Mac does not have it', async t => {
+  const addon = require(addonPath);
+  if (!addon.isTranscribeAudioSupport()) {
+    t.skip('speech transcription is not available here');
+    return;
+  }
+  let missing = null;
+  for (const lang of ['zh-CN', 'en-US', 'fr-FR', 'de-DE', 'ja-JP', 'ko-KR', 'es-ES', 'it-IT', 'pt-BR']) {
+    if ((await addon.getTranscribeAudioModelStatus(lang)) === 'downloadRequired') {
+      missing = lang;
+      break;
+    }
+  }
+  if (!missing) {
+    t.skip('every candidate model is installed here');
+    return;
+  }
+
+  await assert.rejects(addon.transcribeAudio(silentWav(1), missing), error => {
+    assert.equal(error.code, 'ERR_TRANSCRIBE_MODEL_NOT_INSTALLED', `${missing}: ${error.message}`);
     return true;
   });
 });
 
 test('transcribeAudio returns empty text for silence', async t => {
   const addon = require(addonPath);
-  if (!addon.isTranscribeAudioSupport()) {
-    t.skip('speech transcription is not available here');
+  const lang = addon.isTranscribeAudioSupport() ? await readyLanguage(addon) : null;
+  if (!lang) {
+    t.skip('no zh-CN or en-US model is installed here');
     return;
   }
 
-  assert.equal(await addon.transcribeAudio(silentWav(3), 'zh-CN'), '');
+  assert.equal(await addon.transcribeAudio(silentWav(3), lang), '');
 });
 
 test('transcribeAudio transcribes synthesized speech', async t => {

@@ -481,7 +481,11 @@ private struct AnalyzerEngine: TranscriptionEngine {
     func transcribe(audio: Data, lang: String, timeout: Duration?) async throws -> String {
         let locale = try await resolveLocale(lang)
         let transcriber = makeTranscriber(locale)
+        // The format comes from the model's assets, so there is none while they are not on this Mac.
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            guard await isInstalledOnSystem(locale) else {
+                throw TranscribeFailure(code: .modelNotInstalled, message: "Model for \(locale.identifier) is not installed")
+            }
             throw TranscribeFailure(code: .failed, message: "No audio format for \(locale.identifier)")
         }
         let decoded = try decodeAudio(audio) { _ in format }
